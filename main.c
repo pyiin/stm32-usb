@@ -1,81 +1,8 @@
 #include <stdint.h>
 #include "stm32f1xx.h"
+#include "usb.h"
 
 uint8_t l = 0;
-
-#define USB_OTG_FS_DEV    ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
-#define USB_OTG_FS_DEV_ENDPOINT0_OUT     ((USB_OTG_OUTEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_OUT_ENDPOINT_BASE))
-#define USB_OTG_FS_DEV_ENDPOINT0_IN  ((USB_OTG_INEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_IN_ENDPOINT_BASE))
-#define USB_OTG_FS_ENDPOINT0_FIFO (volatile uint32_t*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_FIFO_BASE)
-
-typedef struct setup_packet_t {
-    uint8_t bmRequestType;
-    uint8_t bRequest;
-    uint16_t wValue;
-    uint16_t wIndex;
-    uint16_t wLength;
-} setup_packet_t;
-
-typedef struct device_descriptor_t {
-    uint8_t bLength;
-    uint8_t bDescriptorType;
-    uint16_t bcdUSB;
-    uint8_t bDeviceClass;
-    uint8_t bDeviceSubClass;
-    uint8_t bDeviceProtocol;
-    uint8_t bMaxPacketSize0;
-    uint16_t idVendor;
-    uint16_t idProduct;
-    uint16_t bcdDevice;
-    uint8_t iManufacturer;
-    uint8_t iProduct;
-    uint8_t iSerialNumber;
-    uint8_t bNumConfigurations;
-} device_descriptor_t;
-
-typedef struct __attribute__((packed)) interface_descriptor_t {
-    uint8_t bLength; //0x09
-    uint8_t bDescriptorType;
-    uint8_t bInterfaceNumber;
-    uint8_t bAlternateSetting;
-    uint8_t bNumEndpoints;
-    uint8_t bInterfaceClass;
-    uint8_t bInterfaceSubClass;
-    uint8_t bInterfaceProtocol;
-    uint8_t iInterface;
-} interface_descriptor_t;
-
-typedef struct __attribute__((packed)) endpoint_descriptor_t {
-    uint8_t bLength; //0x07
-    uint8_t bDescriptorType; //0x05
-    uint8_t bEndpointAddress;
-    uint8_t bmAttributes;
-    uint16_t wMaxPacketSize;
-    uint8_t bInterval; //interval for iso and int
-} endpoint_descriptor_t;
-
-typedef struct __attribute__((packed)) configuration_descriptor_t {
-    uint8_t bLength; // 0x09
-    uint8_t bDescriptorType; //0x02
-    uint16_t wTotalLength;
-    uint8_t bNumInterfaces;
-    uint8_t bConfigurationValue;
-    uint8_t iConfiguration; // index of string descriptor
-    uint8_t bmAttributes;
-    uint8_t bMaxPower; // in 2mA units
-} configuration_descriptor_t;
-
-typedef struct qualifier_descriptor_t {
-    uint8_t bLength; // 
-    uint8_t bDescriptorType; //0x06
-    uint16_t bcdUSB;
-    uint8_t bDeviceClass;
-    uint8_t bDeviceSubClass;
-    uint8_t bDeviceProtocol;
-    uint8_t bMaxPacketSize0;
-    uint8_t bNumConfigurations;
-	uint8_t bReserved;
-} qualifier_descriptor_t;
 
 #if !defined(__SOFT_FP__) && defined(__ARM_FP)
   #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
@@ -109,13 +36,6 @@ uint8_t address_pending = 0;
 uint16_t address;
 setup_packet_t setup = {0};
 
-#define USB_DESCRIPTOR_DEVICE 0x01
-#define USB_DESCRIPTOR_CONFIGURATION 0x02
-#define USB_BCD_2 0x0200 //USB 2.0
-#define USB_HID_CLASS 0x03
-#define USB_CDC_ACM_SUBCLASS 0x00
-#define USB_NO_SPECIFIC_PROTOCOL 0x00 //
-
 
 device_descriptor_t usb_device_descriptor = {
     .bLength = 18,
@@ -134,11 +54,7 @@ device_descriptor_t usb_device_descriptor = {
     .bNumConfigurations = 1,
 };
 
-typedef struct __attribute__((packed)) full_configuration_descriptor_t {
-	configuration_descriptor_t usb_configuration_descriptor;
-	interface_descriptor_t usb_interface_descriptor;
-	endpoint_descriptor_t usb_endpoint1_descriptor;
-} full_configuration_descriptor_t;
+
 
 full_configuration_descriptor_t configuration_descriptor = {
     .usb_configuration_descriptor = {
@@ -218,63 +134,8 @@ void usb_enum_done_handler() {
 		USB_OTG_DOEPCTL_CNAK;
 }
 
-void usbRawWrite(volatile uint32_t* fifo, void* data, uint8_t len) {
-    uint32_t fifoWord;
-    uint32_t* buffer = (uint32_t*)data;
-    uint8_t remains = len;
-    for (uint8_t idx = 0; idx < len; idx += 4, remains -= 4, buffer++) {
-        switch (remains) {
-            case 0:
-                break;
-            case 1:
-                fifoWord = *buffer & 0xFF;
-                *fifo = fifoWord;
-                break;
-            case 2:
-                fifoWord = *buffer & 0xFFFF;
-                *fifo = fifoWord;
-                break;
-            case 3:
-                fifoWord = *buffer & 0xFFFFFF;
-                *fifo = fifoWord;
-                break;
-            default:
-                *fifo = *buffer;
-                break;
-        }
-    }
-}
 
-USB_OTG_INEndpointTypeDef* usbEpin(uint8_t ep) {
-    return (void*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_IN_ENDPOINT_BASE + (ep << 5));
-}
-
-USB_OTG_OUTEndpointTypeDef* usbEpout(uint8_t ep) {
-    return (void*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_OUT_ENDPOINT_BASE + (ep << 5));
-}
-
-uint32_t* usbEpFifo(uint8_t ep) {
-    return (uint32_t*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_FIFO_BASE + (ep << 12));
-}
-
-void usbWrite(uint8_t ep, void* data, uint8_t len) {
-    USB_OTG_INEndpointTypeDef* endpoint = usbEpin(ep);
-    volatile uint32_t* fifo = usbEpFifo(ep);
-
-    uint16_t wordLen = (len + 3) >> 2;
-    if (wordLen > endpoint->DTXFSTS) {
-        return;
-    }
-    if ((ep != 0) && (endpoint->DIEPCTL & USB_OTG_DIEPCTL_EPENA)) {
-        return;
-    }
-
-    endpoint->DIEPTSIZ = (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
-    endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
-    usbRawWrite(fifo, data, len);
-}
-
-void set_address(uint16_t new_address) {
+void set_address_pending(uint16_t new_address) {
     address = new_address;
     address_pending = 1;
 	USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPTSIZ = (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos) |
@@ -282,25 +143,7 @@ void set_address(uint16_t new_address) {
     USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPCTL |= USB_OTG_DIEPCTL_CNAK | USB_OTG_DIEPCTL_EPENA;
 }
 
-#define BREQUEST_GET_DESCRIPTOR 0x06
-#define USB_DESCRIPTOR_CONFIGURATION 0x02
-#define USB_DESCRIPTOR_STRING 0x03
-#define USB_DESCRIPTOR_INTERFACE 0x04
-#define USB_DESCRIPTOR_ENDPOINT 0x05
-#define USB_DESCRIPTOR_QUALIFIER 0x06
 
-#define BREQUEST_GET_STATUS 0x00
-#define BREQUEST_SET_ADDRESS 0x05
-#define BREQUEST_SET_CONFIGURATION 0x09
-
-#define USB_STATUS_RESPONSE 0x0000
-
-void usb_stall(uint8_t ep) {
-	USB_OTG_INEndpointTypeDef* epin = usbEpin(ep);
-	USB_OTG_OUTEndpointTypeDef* epout = usbEpout(ep);
-	epin->DIEPCTL |= USB_OTG_DIEPCTL_STALL;
-	epout->DOEPCTL |= USB_OTG_DOEPCTL_STALL;
-}
 
 void setup_device_to_host() {
     if (setup.bRequest == BREQUEST_GET_DESCRIPTOR) {
@@ -348,7 +191,7 @@ void setup_device_to_host() {
 void setup_host_to_device() {
     if (setup.bRequest == BREQUEST_SET_ADDRESS) {
 		usbWrite(0, 0, 0);
-        set_address(setup.wValue);
+        set_address_pending(setup.wValue);
     }
 	else if(setup.bRequest == BREQUEST_SET_CONFIGURATION) {
 		usbWrite(0, 0, 0);
@@ -405,6 +248,7 @@ void usb_vbus_handler() {
 	
 }
 
+
 void read_setup() {
     uint32_t* buffer = (uint32_t*) &setup;
 
@@ -417,7 +261,7 @@ void usb_read_data() {
     uint32_t otg_status = USB_OTG_FS->GRXSTSP;
     uint32_t endpoint_number = otg_status & USB_OTG_GRXSTSP_EPNUM_Msk;
     uint32_t byte_count = (otg_status & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
-    uint32_t data_pid = (otg_status & USB_OTG_GRXSTSP_DPID_Msk) >> USB_OTG_GRXSTSP_DPID_Pos;
+    /* uint32_t data_pid = (otg_status & USB_OTG_GRXSTSP_DPID_Msk) >> USB_OTG_GRXSTSP_DPID_Pos; */
     uint32_t packet_status = (otg_status & USB_OTG_GRXSTSP_PKTSTS_Msk) >> USB_OTG_GRXSTSP_PKTSTS_Pos;
     switch (packet_status) {
 	case 0b0110:// PCKT_STS_SETUP:
@@ -453,9 +297,6 @@ void usb_read_data() {
 
 void OTG_FS_IRQHandler() {
 	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_USBRST) {
-		//        USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_USBRST;
-    }
-	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_USBRST) {
         USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_USBRST;
         usb_reset_handler();
     }
@@ -464,7 +305,6 @@ void OTG_FS_IRQHandler() {
         usb_enum_done_handler();
     }
     while (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_RXFLVL) {
-        // USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_RXFLVL;
         usb_read_data();
     }
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_OEPINT) {
@@ -486,73 +326,6 @@ void wait(uint32_t w, uint32_t n){
 		__asm("nop");
 	SysTick->CTRL &= ~SysTick_CTRL_ENABLE_Msk;
 }
-
-void clock_setup(){
-	RCC->CR |= RCC_CR_HSEON; //enable hse
-	while(!(RCC->CR & RCC_CR_HSERDY))
-		light(0x00);
-	light(0x01);
-	
-	//setup prediv12 and prediv1scr
-	RCC->CFGR |= (0b0111<<RCC_CFGR_PLLMULL_Pos);
-	RCC->CFGR |= (0b0<<RCC_CFGR_OTGFSPRE_Pos);
-	RCC->CFGR |= RCC_CFGR_PLLSRC;
-
-
-	//enable pll
-	RCC->CR |= RCC_CR_PLLON;
-	while(!(RCC->CR & RCC_CR_PLLRDY));
-	light(0x03);
-
-	FLASH->ACR = FLASH_ACR_LATENCY_2 | FLASH_ACR_PRFTBE;
-	//switch to pll
-	RCC->CFGR |= RCC_CFGR_SW_PLL;
-	light(0x07);
-
-	// USB CLK
-	RCC->AHBENR |= RCC_AHBENR_OTGFSEN;
-	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_AFIOEN;
-}
-
-void usb_gpio_set() {
-	// since vbus sensing pin is zero by initial setup
-}
-
-void usb_core_init() {
-    USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_PWRDWN; // enable USB transceiver
-    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT | USB_OTG_GAHBCFG_PTXFELVL | USB_OTG_GAHBCFG_TXFELVL; //fifos completely empty
-
-    USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_TOCAL_0 | USB_OTG_GUSBCFG_TOCAL_1 | USB_OTG_GUSBCFG_TOCAL_2; // add clock cycles inter-packet timeout (based on manual in MOODLE)
-    USB_OTG_FS->GUSBCFG |= (0x6 << USB_OTG_GUSBCFG_TRDT_Pos); //turnaround time
-	USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD;
-	wait(72000,25);
-
-    USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_OTGINT | USB_OTG_GINTMSK_MMISM | USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT; // un-mask global interrupt and mode mismatch interrupt
-	USB_OTG_FS->GINTSTS = 0xffffffff;
-    // force device mode if in host mode
-    if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_CMOD) {
-        USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD;
-        USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_SOF | USB_OTG_GINTSTS_CIDSCHG;
-        while (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_CMOD);
-    }
-}
-
-
-/** Initialize the peripheral as device (not as host) */
-void usb_device_init() {
-    USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_DSPD_0 | USB_OTG_DCFG_DSPD_1; // set device speed to full-speed
-    USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_NZLSOHSK; // send a STALL packet on non-zero-length status OUT transaction (default USB behavior)
-
-    USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM; // unmask interrupts
-    USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_VBUSBSEN; // enable V_BUS sensing "B"
-}
-
-/** Enable interrupts in the NVIC for USB OTG FS peripheral */
-void usb_interrupt_init() {
-    NVIC_SetPriority(OTG_FS_IRQn, 0);
-    NVIC_EnableIRQ(OTG_FS_IRQn);
-}
-
 
 
 int main(void)
@@ -578,10 +351,8 @@ int main(void)
 	GPIOC->ODR = 0;
 	clock_setup();
 	light(0);
-	usb_gpio_set();
 	usb_core_init();
 	usb_device_init();
-	usb_interrupt_init();
 	uint8_t ll =0;
 	while(1){
 		/* wait(7200000, 10);// 1 second? */

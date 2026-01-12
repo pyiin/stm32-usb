@@ -1,0 +1,100 @@
+#include <stdint.h>
+#include "stm32f1xx.h"
+
+#define USB_OTG_FS_DEV    ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
+#define USB_OTG_FS_DEV_ENDPOINT0_OUT     ((USB_OTG_OUTEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_OUT_ENDPOINT_BASE))
+#define USB_OTG_FS_DEV_ENDPOINT0_IN  ((USB_OTG_INEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_IN_ENDPOINT_BASE))
+#define USB_OTG_FS_ENDPOINT0_FIFO (volatile uint32_t*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_FIFO_BASE)
+
+typedef struct setup_packet_t {
+    uint8_t bmRequestType;
+    uint8_t bRequest;
+    uint16_t wValue;
+    uint16_t wIndex;
+    uint16_t wLength;
+} setup_packet_t;
+
+typedef struct device_descriptor_t {
+    uint8_t bLength;
+    uint8_t bDescriptorType;
+    uint16_t bcdUSB;
+    uint8_t bDeviceClass;
+    uint8_t bDeviceSubClass;
+    uint8_t bDeviceProtocol;
+    uint8_t bMaxPacketSize0;
+    uint16_t idVendor;
+    uint16_t idProduct;
+    uint16_t bcdDevice;
+    uint8_t iManufacturer;
+    uint8_t iProduct;
+    uint8_t iSerialNumber;
+    uint8_t bNumConfigurations;
+} device_descriptor_t;
+
+typedef struct __attribute__((packed)) interface_descriptor_t {
+    uint8_t bLength; //0x09
+    uint8_t bDescriptorType;
+    uint8_t bInterfaceNumber;
+    uint8_t bAlternateSetting;
+    uint8_t bNumEndpoints;
+    uint8_t bInterfaceClass;
+    uint8_t bInterfaceSubClass;
+    uint8_t bInterfaceProtocol;
+    uint8_t iInterface;
+} interface_descriptor_t;
+
+typedef struct __attribute__((packed)) endpoint_descriptor_t {
+    uint8_t bLength; //0x07
+    uint8_t bDescriptorType; //0x05
+    uint8_t bEndpointAddress;
+    uint8_t bmAttributes;
+    uint16_t wMaxPacketSize;
+    uint8_t bInterval; //interval for iso and int
+} endpoint_descriptor_t;
+
+typedef struct __attribute__((packed)) configuration_descriptor_t {
+    uint8_t bLength; // 0x09
+    uint8_t bDescriptorType; //0x02
+    uint16_t wTotalLength;
+    uint8_t bNumInterfaces;
+    uint8_t bConfigurationValue;
+    uint8_t iConfiguration; // index of string descriptor
+    uint8_t bmAttributes;
+    uint8_t bMaxPower; // in 2mA units
+} configuration_descriptor_t;
+
+typedef struct __attribute__((packed)) full_configuration_descriptor_t {
+	configuration_descriptor_t usb_configuration_descriptor;
+	interface_descriptor_t usb_interface_descriptor;
+	endpoint_descriptor_t usb_endpoint1_descriptor;
+} full_configuration_descriptor_t;
+
+#define USB_DESCRIPTOR_DEVICE 0x01
+#define USB_DESCRIPTOR_CONFIGURATION 0x02
+#define USB_BCD_2 0x0200 //USB 2.0
+#define USB_HID_CLASS 0x03
+#define USB_CDC_ACM_SUBCLASS 0x00
+#define USB_NO_SPECIFIC_PROTOCOL 0x00 //
+
+#define BREQUEST_GET_DESCRIPTOR 0x06
+#define USB_DESCRIPTOR_CONFIGURATION 0x02
+#define USB_DESCRIPTOR_STRING 0x03
+#define USB_DESCRIPTOR_INTERFACE 0x04
+#define USB_DESCRIPTOR_ENDPOINT 0x05
+#define USB_DESCRIPTOR_QUALIFIER 0x06
+
+#define BREQUEST_GET_STATUS 0x00
+#define BREQUEST_SET_ADDRESS 0x05
+#define BREQUEST_SET_CONFIGURATION 0x09
+
+#define USB_STATUS_RESPONSE 0x0000
+
+
+void usbWrite(uint8_t ep, void* data, uint8_t len);
+uint32_t* usbEpFifo(uint8_t ep);
+USB_OTG_OUTEndpointTypeDef* usbEpout(uint8_t ep);
+USB_OTG_INEndpointTypeDef* usbEpin(uint8_t ep);
+void usb_stall(uint8_t ep);
+void clock_setup();
+void usb_core_init();
+void usb_device_init();

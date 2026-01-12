@@ -95,13 +95,19 @@ void usb_reset_handler() {
     USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPCTL |= USB_OTG_DOEPCTL_SNAK  ; // set the NAK bit for end-point 0
 	 
     // interrupt un-masking
-	USB_OTG_FS_DEV->DAINTMSK |= 0x10001;
+	USB_OTG_FS_DEV->DAINTMSK |= 0x10001;//TODO add ep1
     USB_OTG_FS_DEV->DOEPMSK |= USB_OTG_DOEPMSK_STUPM | USB_OTG_DOEPMSK_XFRCM | USB_OTG_DOEPMSK_OTEPDM | USB_OTG_DOEPMSK_OTEPSPRM;
-    USB_OTG_FS_DEV->DIEPMSK |= USB_OTG_DIEPMSK_XFRCM | (1<<3);
+    USB_OTG_FS_DEV->DIEPMSK |= USB_OTG_DIEPMSK_XFRCM;// | USB_OTG_DIEPINT_TXFE;// | (1<<3);
 
     USB_OTG_FS->GRXFSIZ = RX_FIFO_DEPTH_IN_WORDS; // size of RxFIFO (arbitrarily chosen)
     USB_OTG_FS->DIEPTXF0_HNPTXFSIZ = (TX_FIFO_DEPTH_IN_WORDS << USB_OTG_TX0FD_Pos) | TX_FIFO_DEPTH_IN_WORDS; // size of TxFIFO, address of txFifo
 	//    USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPTSIZ = (1 << USB_OTG_DOEPTSIZ_STUPCNT_Pos) | (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos); // receive 1 setup packet, 1 packet, 8 bytes
+	//flush fifos
+	USB_OTG_FS->GRSTCTL = USB_OTG_GRSTCTL_RXFFLSH;
+	while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_RXFFLSH);
+
+	USB_OTG_FS->GRSTCTL = USB_OTG_GRSTCTL_TXFFLSH | (0 << USB_OTG_GRSTCTL_TXFNUM_Pos);
+	while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_TXFFLSH);
 
 	USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPTSIZ =
     (1 << USB_OTG_DOEPTSIZ_STUPCNT_Pos) |
@@ -192,6 +198,7 @@ void setup_host_to_device() {
     if (setup.bRequest == BREQUEST_SET_ADDRESS) {
 		usbWrite(0, 0, 0);
         set_address_pending(setup.wValue);
+		light(++l);
     }
 	else if(setup.bRequest == BREQUEST_SET_CONFIGURATION) {
 		usbWrite(0, 0, 0);
@@ -209,7 +216,7 @@ void usb_handle_setup_packet() {
 void usb_interrupt_out_handler() {
 	uint32_t flags = USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT;
 	if (flags & USB_OTG_DOEPINT_STUP) {
-		USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT |= USB_OTG_DOEPINT_STUP;
+		USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_STUP;
 	}
     if (flags & USB_OTG_DOEPINT_XFRC) {
         USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_XFRC;
@@ -222,25 +229,21 @@ void usb_interrupt_out_handler() {
 }
 
 void usb_interrupt_in_handler() {
+	//	if (USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT & USB_OTG_DIEPINT_) {
+	//	}
     if (USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT & USB_OTG_DIEPINT_XFRC) {
         // transfer finished interrupt
-        if (address_pending) {
-			USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT |=
+		/* USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT = */
+		/* 	USB_OTG_DIEPINT_XFRC; // clear interrupt */
+		if (address_pending) {
+			USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT =
 				USB_OTG_DIEPINT_XFRC; // clear interrupt
 
-			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPTSIZ =
-				(1 << USB_OTG_DOEPTSIZ_STUPCNT_Pos) |
-				(1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) |
-				(8 << USB_OTG_DOEPTSIZ_XFRSIZ_Pos);
-			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPCTL =
-				USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
-
-			USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPCTL |= USB_OTG_DIEPCTL_CNAK;
-			
+		
 			USB_OTG_FS_DEV->DCFG &= ~USB_OTG_DCFG_DAD;
 			USB_OTG_FS_DEV->DCFG |= (address << USB_OTG_DCFG_DAD_Pos);
 			address_pending = 0;
-        }
+        } 
     }
 }
 
@@ -282,38 +285,58 @@ void usb_read_data() {
 			USB_OTG_DOEPCTL_CNAK;
 		break;
 	case 0b0010:
-		/* USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPTSIZ = */
-		/* 	(1 << USB_OTG_DOEPTSIZ_STUPCNT_Pos) | */
-		/* 	(1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | */
-		/* 	(8 << USB_OTG_DOEPTSIZ_XFRSIZ_Pos); */
+		for (uint32_t i = 0; i < (byte_count + 3) / 4; i++) {
+			(void)*USB_OTG_FS_ENDPOINT0_FIFO;
+		}
 
-		/* USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPCTL = */
-		/* 	USB_OTG_DOEPCTL_EPENA | */
-		/* 	USB_OTG_DOEPCTL_CNAK; */
-	default:
+		USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPTSIZ =
+			(1 << USB_OTG_DOEPTSIZ_STUPCNT_Pos) |
+			(1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) |
+			(8 << USB_OTG_DOEPTSIZ_XFRSIZ_Pos);
+
+		USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPCTL =
+			USB_OTG_DOEPCTL_EPENA |
+			USB_OTG_DOEPCTL_CNAK;
 		break;
     }
 }
 
+void usb_otgint_handler() {
+	USB_OTG_FS->GOTGINT = 0xffffffff;
+}
+
 void OTG_FS_IRQHandler() {
+	uint32_t gintsts = USB_OTG_FS->GINTSTS;
+	uint32_t gintmsk = USB_OTG_FS->GINTMSK;
+
 	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_USBRST) {
-        USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_USBRST;
+        USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_USBRST;
         usb_reset_handler();
     }
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_ENUMDNE) {
-        USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_ENUMDNE;
+        USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_ENUMDNE;
         usb_enum_done_handler();
     }
-    while (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_RXFLVL) {
-        usb_read_data();
+    if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_RXFLVL) {
+		USB_OTG_FS->GINTMSK &= ~USB_OTG_GINTMSK_RXFLVLM;
+		
+		while (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_RXFLVL) {
+			usb_read_data();
+		}
+    
+		USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_RXFLVLM;
     }
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_OEPINT) {
-        USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_OEPINT;
         usb_interrupt_out_handler();
     }
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_IEPINT) {
-        USB_OTG_FS->GINTSTS |= USB_OTG_GINTSTS_IEPINT;
         usb_interrupt_in_handler();
+    }
+	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_MMIS) {
+        USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_MMIS;
+    }
+	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_OTGINT) {
+		usb_otgint_handler();
     }
 }
 
@@ -330,9 +353,6 @@ void wait(uint32_t w, uint32_t n){
 
 int main(void)
 {
-	//	AFIO->MAPR |= 0x0180;
-	//	AFIO->MAPR &= ~(0x7 << 24);
-
 	__enable_irq();
 
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN | RCC_APB2ENR_IOPDEN | RCC_APB2ENR_AFIOEN;// 0x3c;

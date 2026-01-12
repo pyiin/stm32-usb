@@ -103,14 +103,16 @@ void clock_setup(){
 void usb_core_init() {
 	//make sure to set up vsense pin
     USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_PWRDWN; // enable USB transceiver
-    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT | USB_OTG_GAHBCFG_PTXFELVL | USB_OTG_GAHBCFG_TXFELVL; //fifos completely empty
+    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;// | USB_OTG_GAHBCFG_PTXFELVL | USB_OTG_GAHBCFG_TXFELVL; //fifos completely empty
 
     USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_TOCAL_0 | USB_OTG_GUSBCFG_TOCAL_1 | USB_OTG_GUSBCFG_TOCAL_2; // add clock cycles inter-packet timeout 
     USB_OTG_FS->GUSBCFG |= (0x6 << USB_OTG_GUSBCFG_TRDT_Pos); //turnaround time
 	USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD; //force device mode
-	wait(72000,25);
+	for(uint32_t i=100000; i>0; i--)
+		__asm("nop");
+	//  	wait(72000,25);
 
-    USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_OTGINT | USB_OTG_GINTMSK_MMISM | USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT; // un-mask global interrupt and mode mismatch interrupt
+    USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_USBRST |  USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT;//USB_OTG_GINTMSK_MMISM | USB_OTG_GINTMSK_OTGINT | // un-mask global interrupt and mode mismatch interrupt
 	USB_OTG_FS->GINTSTS = 0xffffffff; //zero all interrupts
 
 	//set up interrupts
@@ -124,6 +126,8 @@ void usb_device_init() {
     USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_DSPD_0 | USB_OTG_DCFG_DSPD_1; // set device speed to full-speed
     USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_NZLSOHSK; // send a STALL packet on non-zero-length status OUT transaction (default USB behavior)
 
-    USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM; // unmask interrupts
+    USB_OTG_FS->GINTMSK |=  USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM; // unmask interrupts
     USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_VBUSBSEN; // enable V_BUS sensing "B"
+
+	//	ep0_state = idle;
 }

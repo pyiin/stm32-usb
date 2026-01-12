@@ -98,3 +98,11 @@ void usb_stall(uint8_t ep);
 void clock_setup();
 void usb_core_init();
 void usb_device_init();
+
+enum  {
+	idle,
+	stup,
+	zlp_device,
+	data_out,
+	zlp_host,
+} ep0_state;

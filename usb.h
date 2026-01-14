@@ -6,8 +6,7 @@
 #define USB_OTG_FS_DEV_ENDPOINT0_IN  ((USB_OTG_INEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_IN_ENDPOINT_BASE))
 #define USB_OTG_FS_ENDPOINT0_FIFO (volatile uint32_t*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_FIFO_BASE)
 
-#define RX_FIFO_DEPTH_IN_WORDS 64
-#define TX_FIFO_DEPTH_IN_WORDS 64
+
 
 typedef struct setup_packet_t {
     uint8_t bmRequestType;

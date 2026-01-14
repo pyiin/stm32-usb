@@ -66,34 +66,53 @@ typedef struct __attribute__((packed)) configuration_descriptor_t {
     uint8_t bMaxPower; // in 2mA units
 } configuration_descriptor_t;
 
+typedef struct __attribute__((packed)) HID_descriptor_t {
+    uint8_t bLength; // 0x09
+    uint8_t bDescriptorType; //0x22
+    uint16_t bcdHid; //0x0111
+    uint8_t bCountryCode; //0x00
+    uint8_t bNumDescriptors;
+    uint8_t bHidDescriptorType; // 0x22 -- report
+    uint16_t wDescriptorLength;
+} HID_descriptor_t;
+
+
 typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 	configuration_descriptor_t usb_configuration_descriptor;
 	interface_descriptor_t usb_interface_descriptor;
+	HID_descriptor_t usb_HID_descriptor;
 	endpoint_descriptor_t usb_endpoint1_descriptor;
 } full_configuration_descriptor_t;
 
-#define USB_DESCRIPTOR_DEVICE 0x01
-#define USB_DESCRIPTOR_CONFIGURATION 0x02
+
+#define	EP_control 0x0
+#define	EP_isyncronous 0x1
+#define	EP_bulk 0x2
+#define	EP_interrupt 0x3
+
+
 #define USB_BCD_2 0x0200 //USB 2.0
 #define USB_HID_CLASS 0x03
 #define USB_CDC_ACM_SUBCLASS 0x00
 #define USB_NO_SPECIFIC_PROTOCOL 0x00 //
 
+#define USB_DESCRIPTOR_DEVICE 0x01
 #define BREQUEST_GET_DESCRIPTOR 0x06
 #define USB_DESCRIPTOR_CONFIGURATION 0x02
 #define USB_DESCRIPTOR_STRING 0x03
 #define USB_DESCRIPTOR_INTERFACE 0x04
 #define USB_DESCRIPTOR_ENDPOINT 0x05
 #define USB_DESCRIPTOR_QUALIFIER 0x06
+#define USB_DESCRIPTOR_HID_REPORT 0x22
 
+#define BREQUEST_SET_IDLE 0x0a
 #define BREQUEST_GET_STATUS 0x00
 #define BREQUEST_SET_ADDRESS 0x05
 #define BREQUEST_SET_CONFIGURATION 0x09
 
 #define USB_STATUS_RESPONSE 0x0000
 
-
-void usbWrite(uint8_t ep, void* data, uint8_t len);
+void usbWrite(uint8_t ep, void *data, uint8_t len);
 uint32_t* usbEpFifo(uint8_t ep);
 USB_OTG_OUTEndpointTypeDef* usbEpout(uint8_t ep);
 USB_OTG_INEndpointTypeDef* usbEpin(uint8_t ep);
@@ -101,4 +120,4 @@ void usb_stall(uint8_t ep);
 void clock_setup();
 void usb_core_init();
 void usb_device_init();
-
+void write_report(void*);

@@ -6,14 +6,84 @@
 uint8_t keys[8] = {
 	0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
-uint8_t keysb[8] = {
-	0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00,
-};
+
 uint8_t empty[8] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
+void write_string(uint8_t* buf, uint32_t len){
+	uint32_t idx = 0;
+	while(idx < len){
+		keys[2] = buf[idx] - 'a' + 4;
+		if(keys[2] > 0x27) keys[2] = 0x00;
+		if(buf[idx] == ' ') keys[2] = 0x2c;
+		if(buf[idx] == '#') keys[2] = 0x28;
 
+		while(!write_report(&keys));
+		while(!write_report(&empty));
+		idx++;
+	}
+	keys[2] = 0x28;
+	while(!write_report(&keys));
+	while(!write_report(&empty));
+}
+
+void write_string_packed(uint8_t* buf, uint32_t len){
+	uint32_t idx = 0;
+	while(idx < len){
+		for (uint8_t i = 2; i < 8; i++) keys[i] = 0;
+		for (uint8_t i = 2; i < 8 & idx < len; i++,idx++) {
+			for(uint8_t j=1; j<=i-2; j++)
+				if(buf[idx] == buf[idx-j])
+					goto write;
+            keys[i] = buf[idx] - 'a' + 4;
+            if (keys[i] > 0x27)
+				keys[i] = 0x00;
+            if (buf[idx] == ' ')
+				keys[i] = 0x2c;
+            if (buf[idx] == '#')
+				keys[i] = 0x28;
+		}
+	write:
+		while(!write_report(&keys));
+		while(!write_report(&empty));
+	}
+	keys[2] = 0x28;
+	while(!write_report(&keys));
+	while(!write_report(&empty));
+}
+
+/* void write_string_packed2(uint8_t* buf, uint32_t len){ */
+/* 	uint32_t idx = 0; */
+/* 	uint32_t prev_idx = 0; */
+/* 	uint32_t idx_tmp = 0; */
+/* 	while(idx < len){ */
+/* 		idx_tmp = idx; */
+/* 		for (uint8_t i = 2; i < 8; i++) keys[i] = 0; */
+/* 		for (uint8_t i = 2; (i < 8) & (idx < len); i++,idx++) { */
+/* 			for(uint32_t j = prev_idx; j < idx; j++){ */
+/* 				if(buf[idx] == buf[j]) */
+/* 					goto write; */
+/* 			} */
+/*             keys[i] = buf[idx] - 'a' + 4; */
+/*             if (keys[i] > 0x27) */
+/* 				keys[i] = 0x00; */
+/*             if (buf[idx] == ' ') */
+/* 				keys[i] = 0x2c; */
+/*             if (buf[idx] == '#') */
+/* 				keys[i] = 0x28; */
+/* 		} */
+/* 	write: */
+/* 		prev_idx = idx_tmp; */
+/* 		while(!write_report(&keys)); */
+/* 	} */
+/* 	keys[2] = 0x28; */
+/* 	while(!write_report(&empty)); */
+/* 	while(!write_report(&keys)); */
+/* 	while(!write_report(&empty)); */
+/* } */
+
+uint8_t test[] = "aaaa bbbb";
 int main(void)
 {
 	__enable_irq();
@@ -36,21 +106,18 @@ int main(void)
 	clock_setup();
 	usb_core_init();
 	usb_device_init();
-	uint8_t ll = 0;
-	wait_clk(720000,20);
+	uint8_t st = 0;
+	uint8_t b = 0;
+	wait_clk(7200000,5);
 	while (1) {
-		write_report(&keys);
-		//	 write_report(&empty);
-		/* wait(7200000, 10);// 1 second? */
-		/* light(0
-		   b10101010); */
-		/* wait(7200000, 10); */
-		/* light(0b01010101); */
-		/* wait_clk(7200, 1); */
-		//	write_report(&keysb);
-		//	write_report(&empty);
-		//	wait_clk(720000, 1);
-		keys[2] = ++keys[2]%30;
-		light(ll++);
+		/* if(b==0) */
+		/* 	st = write_report(&empty); */
+		/* else */
+		/* 	st = write_report(&keys); */
+		/* if(st == 1) b = (++b)%2; */
+		write_string_packed((uint8_t*)&bee_movie, sizeof(bee_movie));
+		/* write_string_packed((uint8_t*)test, sizeof(test)); */
+		wait_clk(72000000, 1);
+		//		if(st) keys[2] = ++keys[2]%30;
 	}
 }

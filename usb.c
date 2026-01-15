@@ -8,7 +8,7 @@ uint8_t address_pending = 0;
 uint16_t address;
 #define HID_REPORT_SIZE 46
 uint8_t l = 0;
-#define PACKETSIZ 4
+#define PACKETSIZ 8
 
 #define RX_FIFO_DEPTH_IN_WORDS 64
 #define TX0_FIFO_DEPTH_IN_WORDS 64
@@ -30,11 +30,11 @@ device_descriptor_t usb_device_descriptor = {
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
     .bMaxPacketSize0 = 64,
-    .idVendor = 0x413c,//0x0483,
-    .idProduct = 0x2010,//0x5740,
+    .idVendor = 0xdead,//0x413c,//0x0483,
+    .idProduct = 0xbeef,//0x2010,//0x5740,
     .bcdDevice = 0x0100,
-    .iManufacturer = 0,
-    .iProduct = 0,
+    .iManufacturer = 1,
+    .iProduct = 2,
     .iSerialNumber = 0,
     .bNumConfigurations = 1,
 };
@@ -84,6 +84,49 @@ full_configuration_descriptor_t configuration_descriptor = {
 	},
 };
 
+struct str_langid_s {
+	string_descriptor_t dsc;
+	uint16_t langid;
+} str_langid = {
+	.dsc = {
+		.bLength = 4,
+		.bDescriptorType = USB_DESCRIPTOR_STRING,
+	},
+	.langid = 0x0409,
+};
+
+#define MANUF_LEN 5
+struct str_manuf {
+	string_descriptor_t dsc;
+	uint16_t str[MANUF_LEN];
+} str_manuf = {
+    .dsc =
+	{
+		.bLength = 2*MANUF_LEN+2,
+		.bDescriptorType = USB_DESCRIPTOR_STRING,
+	},
+    .str =
+	{
+		'S', 'T', 'M', '3', '2',
+	},
+};
+
+#define PROD_LEN 8
+
+struct str_prod {
+	string_descriptor_t dsc;
+	uint16_t str[PROD_LEN];
+} str_prod = {
+    .dsc =
+	{
+		.bLength = 2*PROD_LEN+2,
+		.bDescriptorType = USB_DESCRIPTOR_STRING,
+	},
+    .str =
+	{
+		'k', 'e', 'y', 'b', 'o', 'a', 'r', 'd'
+	},
+};
 
 uint8_t hid_report[HID_REPORT_SIZE] = {
 	0x05, 0x01, //usage page
@@ -105,7 +148,7 @@ uint8_t hid_report[HID_REPORT_SIZE] = {
 	0x29, 0xff,
 	0x15, 0x00,
 	0x26, 0xff, 0x00,
-	0x95, 0x02,//0x06
+	0x95, 0x06,//0x06
 	0x75, 0x08,
 	0x81, 0x00,
 	0xc0
@@ -327,11 +370,13 @@ void usb_enum_done_handler() {
 
 uint8_t can_write = 0;
 
-void write_report(void* buf){
+uint8_t write_report(void* buf){
 	if (can_write) {
 		can_write = 0;
 		usbWrite(1, buf, PACKETSIZ);
+		return 1;
 	}
+	return 0;
 }
 
 void setup_device_to_host() {
@@ -360,6 +405,19 @@ void setup_device_to_host() {
 			ep0_state = data_out;
 			break;
 		case USB_DESCRIPTOR_STRING:
+			switch (setup.wValue & 0x00ff) {
+			case 0:
+				usbWrite(0, &str_langid, 4);
+				break;
+			case 1:
+				usbWrite(0, &str_manuf, 2*MANUF_LEN+2);
+				break;
+			case 2:
+				usbWrite(0, &str_prod, 2*PROD_LEN+2);
+				break;
+			}
+			ep0_state = data_out;
+			break;
 		case USB_DESCRIPTOR_INTERFACE:
 		case USB_DESCRIPTOR_ENDPOINT:
 		case USB_DESCRIPTOR_QUALIFIER:

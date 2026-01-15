@@ -33,6 +33,11 @@ typedef struct device_descriptor_t {
     uint8_t bNumConfigurations;
 } device_descriptor_t;
 
+typedef struct __attribute__((packed)) string_descriptor_t {
+    uint8_t bLength;
+    uint8_t bDescriptorType;
+} string_descriptor_t;
+
 typedef struct __attribute__((packed)) interface_descriptor_t {
     uint8_t bLength; //0x09
     uint8_t bDescriptorType;
@@ -119,4 +124,4 @@ void usb_stall(uint8_t ep);
 void clock_setup();
 void usb_core_init();
 void usb_device_init();
-void write_report(void*);
+uint8_t write_report(void*);

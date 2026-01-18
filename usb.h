@@ -101,7 +101,7 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 #define USB_NO_SPECIFIC_PROTOCOL 0x00 //
 
 #define USB_DESCRIPTOR_DEVICE 0x01
-#define BREQUEST_GET_DESCRIPTOR 0x06
+
 #define USB_DESCRIPTOR_CONFIGURATION 0x02
 #define USB_DESCRIPTOR_STRING 0x03
 #define USB_DESCRIPTOR_INTERFACE 0x04
@@ -112,12 +112,14 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 #define BREQUEST_SET_IDLE 0x0a
 #define BREQUEST_GET_STATUS 0x00
 #define BREQUEST_SET_ADDRESS 0x05
+#define BREQUEST_GET_DESCRIPTOR 0x06
+#define BREQUEST_SET_REPORT 0x0
 #define BREQUEST_SET_CONFIGURATION 0x09
 
 #define USB_STATUS_RESPONSE 0x0000
 
 void usbWrite(uint8_t ep, void *data, uint8_t len);
-uint32_t* usbEpFifo(uint8_t ep);
+volatile uint32_t* usbEpFifo(uint8_t ep);
 USB_OTG_OUTEndpointTypeDef* usbEpout(uint8_t ep);
 USB_OTG_INEndpointTypeDef* usbEpin(uint8_t ep);
 void usb_stall(uint8_t ep);
@@ -125,3 +127,4 @@ void clock_setup();
 void usb_core_init();
 void usb_device_init();
 uint8_t write_report(void*);
+void usb_ep_buf_set(uint8_t ep, uint32_t *buf);

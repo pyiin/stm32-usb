@@ -83,7 +83,33 @@ void write_string_packed(uint8_t* buf, uint32_t len){
 /* 	while(!write_report(&empty)); */
 /* } */
 
-uint8_t test[] = "aaaa bbbb";
+uint32_t buffer[10];
+
+void lightdebug(uint32_t t) {
+	for (int i = 0; i < 4; i++, t = (t >> 8)) {
+		light(t & 0xff);
+		wait_clk(720000, 10);
+	}
+	light(0x00);
+}
+
+void EXTI15_10_IRQHandler() {
+	light(0xff);
+	switch (EXTI->PR) {
+	case 1 << 12:
+		write_string((uint8_t*)"a", 1);
+		break;
+	case 1 << 13:
+		write_string((uint8_t*)"b", 1);
+		break;
+	case 1 << 15:
+		write_string((uint8_t*)"c", 1);
+		break;
+	}
+	EXTI->PR = 0b1011<<12;
+}
+
+uint8_t test[] = "aaaa bbbb#";
 int main(void)
 {
 	__enable_irq();
@@ -93,6 +119,12 @@ int main(void)
 	AFIO->MAPR |= (0x2 << 24);//debugging ports remap
 
 	NVIC_EnableIRQ(SysTick_IRQn);
+
+	/* SCnSCB->ACTLR |= SCnSCB_ACTLR_DISDEFWBUF_Msk; */
+	/* SCB->SHCSR |= SCB_SHCSR_BUSFAULTENA_Msk */
+	/* 	|  SCB_SHCSR_MEMFAULTENA_Msk */
+	/* 	|  SCB_SHCSR_USGFAULTENA_Msk; */
+
 
 	GPIOD->CRL = 0x00000200;
 	GPIOC->CRH = 0x00022200;
@@ -106,18 +138,35 @@ int main(void)
 	clock_setup();
 	usb_core_init();
 	usb_device_init();
+	usb_ep_buf_set(0,buffer);
+
+	
+	GPIOB->CRH = 0x80880000; //i2s ports remapped to input pull down;
+	GPIOB->ODR &= ~0x10110000;
+	EXTI->IMR |= 0b1011<<12; //interrrupt
+	EXTI->RTSR |= 0b1011<<12; //rising
+	AFIO->EXTICR[3] |= 0x1011; //pb select
+
+	NVIC_EnableIRQ(EXTI15_10_IRQn);
+	NVIC_SetPriority(EXTI15_10_IRQn,1);
+	
 	uint8_t st = 0;
 	uint8_t b = 0;
 	wait_clk(7200000,5);
+
+	//33,34,36,37
+	//pb12,13,15  pc6
 	while (1) {
 		/* if(b==0) */
 		/* 	st = write_report(&empty); */
 		/* else */
 		/* 	st = write_report(&keys); */
 		/* if(st == 1) b = (++b)%2; */
-		write_string_packed((uint8_t*)&bee_movie, sizeof(bee_movie));
-		/* write_string_packed((uint8_t*)test, sizeof(test)); */
-		wait_clk(72000000, 1);
+		/* write_string_packed((uint8_t*)&bee_movie, sizeof(bee_movie)); */
+				//		write_string_packed((uint8_t*)test, sizeof(test));
+		wait_clk(7200000, 1);
+		light(buffer[0] & 0xff);
+		/* lightdebug(buffer[0]); */
 		//		if(st) keys[2] = ++keys[2]%30;
 	}
 }

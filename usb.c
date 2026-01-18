@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <assert.h>
 #include "stm32f1xx.h"
 #include "usb.h"
 #include "misc.h"
@@ -6,7 +7,7 @@
 setup_packet_t setup = {0};
 uint8_t address_pending = 0;
 uint16_t address;
-#define HID_REPORT_SIZE 46
+#define HID_REPORT_SIZE sizeof(hid_report)
 uint8_t l = 0;
 #define PACKETSIZ 8
 
@@ -19,8 +20,52 @@ enum  {
 	stup,
 	zlp_device,
 	data_out,
+	data_in,
 	zlp_host,
 } ep0_state;
+
+uint8_t hid_report[] = {
+	0x05, 0x01, //usage page
+	0x09, 0x06, //generic keyboard
+	0xa1, 0x01, //collection
+	0x05, 0x07, //usage page
+	0x19, 0xe0, //usage min
+	0x29, 0xe7,
+	0x15, 0x00, //log min
+	0x25, 0x01,
+	0x95, 0x08,
+	0x75, 0x01, //rep size
+	0x81, 0x02,
+	0x95, 0x01,
+	0x75, 0x08,
+	0x81, 0x01,
+	0x05, 0x07,
+	0x19, 0x00,
+	0x29, 0xff,
+	0x15, 0x00,
+	0x26, 0xff, 0x00,
+	0x95, 0x06,//0x06
+	0x75, 0x08,
+	0x81, 0x00,
+	0x05, 0x08, //led page
+	0x19, 0x01,
+	0x29, 0x04,
+	0x15, 0x00,
+	0x25, 0x01,
+	0x95, 0x04,
+	0x75, 0x01,
+	0x91, 0x02,
+	0x05, 0x08, //led page
+	0x19, 0x06,
+	0x29, 0x09,
+	0x15, 0x00,
+	0x25, 0x01,
+	0x95, 0x04,
+	0x75, 0x01,
+	0x91, 0x02,
+	0xc0
+};
+
 
 device_descriptor_t usb_device_descriptor = {
     .bLength = 18,
@@ -41,7 +86,7 @@ device_descriptor_t usb_device_descriptor = {
 
 full_configuration_descriptor_t configuration_descriptor = {
     .usb_configuration_descriptor =
-        {
+	{
             .bLength = 9,
             .bDescriptorType = USB_DESCRIPTOR_CONFIGURATION,
             .wTotalLength = 9 + 9 + 7 + 9, // TODO
@@ -50,19 +95,19 @@ full_configuration_descriptor_t configuration_descriptor = {
             .iConfiguration = 0, // index of string descriptor
             .bmAttributes = 0b10000000,
             .bMaxPower = 50, // in 2mA units
-        },
+	},
     .usb_interface_descriptor =
-        {
+	{
             .bLength = 9,
             .bDescriptorType = 0x04,
             .bInterfaceNumber = 0,
             .bAlternateSetting = 0,
-            .bNumEndpoints = 1,
+            .bNumEndpoints = 2,
             .bInterfaceClass = USB_HID_CLASS,
             .bInterfaceSubClass = 0x01,
             .bInterfaceProtocol = 0x01,
             .iInterface = 0,
-        },
+	},
     .usb_HID_descriptor =
 	{
 		.bLength = 9,
@@ -128,31 +173,6 @@ struct str_prod {
 	},
 };
 
-uint8_t hid_report[HID_REPORT_SIZE] = {
-	0x05, 0x01, //usage page
-	0x09, 0x06, //generic keyboard
-	0xa1, 0x01, //collection
-	0x05, 0x07, //usage page
-	0x19, 0xe0, //usage min
-	0x29, 0xe7,
-	0x15, 0x00, //log min
-	0x25, 0x01,
-	0x95, 0x08,
-	0x75, 0x01, //rep size
-	0x81, 0x02,
-	0x95, 0x01,
-	0x75, 0x08,
-	0x81, 0x01,
-	0x05, 0x07,
-	0x19, 0x00,
-	0x29, 0xff,
-	0x15, 0x00,
-	0x26, 0xff, 0x00,
-	0x95, 0x06,//0x06
-	0x75, 0x08,
-	0x81, 0x00,
-	0xc0
-};
 
 
 void usbRawWrite(volatile uint32_t* fifo, void* data, uint8_t len) {
@@ -190,7 +210,7 @@ inline USB_OTG_OUTEndpointTypeDef* usbEpout(uint8_t ep) {
     return (void*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_OUT_ENDPOINT_BASE + (ep << 5));
 }
 
-inline uint32_t* usbEpFifo(uint8_t ep) {
+inline volatile uint32_t* usbEpFifo(uint8_t ep) {
     return (uint32_t*)(USB_OTG_FS_PERIPH_BASE + USB_OTG_FIFO_BASE + (ep << 12));
 }
 
@@ -201,7 +221,6 @@ void usbWrite(uint8_t ep, void* data, uint8_t len) {
     volatile uint32_t* fifo = usbEpFifo(ep);
 
     uint16_t wordLen = (len + 3) >> 2;
-	light(endpoint->DTXFSTS>>2);
 
     if (wordLen > endpoint->DTXFSTS) {
         return;
@@ -209,19 +228,27 @@ void usbWrite(uint8_t ep, void* data, uint8_t len) {
     if ((ep != 0) && (endpoint->DIEPCTL & USB_OTG_DIEPCTL_EPENA)) {
         return;
     }
-	endpoint->DIEPTSIZ = (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
+	uint8_t pcktcnt = ((len+63)>>6);
+	endpoint->DIEPTSIZ = (pcktcnt << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
     endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;	
     usbRawWrite(fifo, data, len);
 }
 
 
-void read_ep_fifo(void* buffer, uint8_t ep, uint8_t len) {
-	uint32_t* b = (uint32_t*) buffer;
-	volatile uint32_t* fifo = usbEpFifo(ep);
+/* void read_ep_fifo(void* buffer, uint8_t ep, uint8_t len) { */
+/* 	uint32_t* b = (uint32_t*) buffer; */
+/* 	volatile uint32_t* fifo = usbEpFifo(ep); */
 
-	for (uint8_t idx = 0; idx < len; idx++, buffer++) {
-        *b = *(volatile uint32_t*)fifo;
-    }
+/* 	for (uint8_t idx = 0; idx < len; idx++, buffer++) { */
+/*         *b = *(volatile uint32_t*)fifo; */
+/*     } */
+/* } */
+
+uint32_t* usb_ep_buf[4];
+
+void usb_ep_buf_set(uint8_t ep, uint32_t *buf) {
+	if(ep < 4)
+		usb_ep_buf[ep] = buf;
 }
 
 inline void usb_stall(uint8_t ep) { //TODO: add dir!
@@ -242,6 +269,17 @@ void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint8_t packet_siz
 	//	ep->DIEPCTL |= USB_OTG_DIEPCTL_EPENA;// | USB_OTG_DIEPCTL_SNAK;
 	USB_OTG_FS_DEV->DAINTMSK |= (1<<epn);
 	
+}
+
+void ep_out_enable(uint8_t epn, uint8_t eptype, uint8_t packet_size) {
+	USB_OTG_OUTEndpointTypeDef* ep = usbEpout(epn);
+	ep->DOEPCTL |= (eptype << USB_OTG_DOEPCTL_EPTYP_Pos);
+	ep->DOEPCTL |= packet_size;
+	ep->DOEPCTL |= USB_OTG_DOEPCTL_USBAEP;
+	/* – Endpoint start data toggle (for interrupt and bulk endpoints) */
+	ep->DOEPCTL |= USB_OTG_DOEPCTL_SNAK;
+	//	ep->DIEPCTL |= USB_OTG_DIEPCTL_EPENA;// | USB_OTG_DIEPCTL_SNAK;
+	USB_OTG_FS_DEV->DAINTMSK |= (1<<(epn+16));
 }
 
 void set_ep0_idle() {
@@ -275,6 +313,15 @@ void set_ep0_zlphost() {
 	ep0_state = zlp_host;
 }
 
+void usb_set_out_ep(uint8_t epnum, uint8_t size, uint8_t pcktcnt) {
+	USB_OTG_OUTEndpointTypeDef* ep = usbEpout(epnum);
+	ep->DOEPTSIZ = (pcktcnt << USB_OTG_DOEPTSIZ_PKTCNT_Pos) |
+		(size << USB_OTG_DOEPTSIZ_XFRSIZ_Pos);
+
+	ep->DOEPCTL =
+		USB_OTG_DOEPCTL_EPENA |
+		USB_OTG_DOEPCTL_CNAK;
+}
 
 //init functions
 
@@ -335,14 +382,14 @@ void usb_reset_handler() {
     USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPCTL |= USB_OTG_DOEPCTL_SNAK  ; // set the NAK bit for end-point 0
 	 
     // interrupt un-masking
-	USB_OTG_FS_DEV->DAINTMSK |= 0x10001;//TODO add ep1
+	USB_OTG_FS_DEV->DAINTMSK |= 0x10001;
     USB_OTG_FS_DEV->DOEPMSK |= USB_OTG_DOEPMSK_STUPM | USB_OTG_DOEPMSK_XFRCM | USB_OTG_DOEPMSK_OTEPDM | USB_OTG_DOEPMSK_OTEPSPRM;
     USB_OTG_FS_DEV->DIEPMSK |= USB_OTG_DIEPMSK_XFRCM;// | USB_OTG_DIEPMSK_ITTXFEMSK;// | USB_OTG_DIEPINT_TXFE;// | (1<<3);
 
     USB_OTG_FS->GRXFSIZ = RX_FIFO_DEPTH_IN_WORDS; 
     USB_OTG_FS->DIEPTXF[0] = (TX0_FIFO_DEPTH_IN_WORDS << USB_OTG_TX0FD_Pos) | RX_FIFO_DEPTH_IN_WORDS;
 
-	USB_OTG_FS->DIEPTXF[1] = ((TX1_FIFO_DEPTH_IN_WORDS) << USB_OTG_TX0FD_Pos) | (TX1_FIFO_DEPTH_IN_WORDS+RX_FIFO_DEPTH_IN_WORDS);
+	USB_OTG_FS->DIEPTXF[1] = ((TX1_FIFO_DEPTH_IN_WORDS) << USB_OTG_TX0FD_Pos) | (TX0_FIFO_DEPTH_IN_WORDS+RX_FIFO_DEPTH_IN_WORDS);
 
 	//flush fifos
 	USB_OTG_FS->GRSTCTL = USB_OTG_GRSTCTL_RXFFLSH;
@@ -443,21 +490,31 @@ void setup_host_to_device() {
 	else if(setup.bRequest == BREQUEST_SET_CONFIGURATION) {
 		set_ep0_zlpdev();
 		ep_in_enable(1, 1, EP_interrupt, PACKETSIZ);
+		/* ep_out_enable(1, EP_interrupt, PACKETSIZ); */
+		/* usb_set_out_ep(1, 1, 1); */
 		can_write = 1;
-    } else if (setup.bRequest == BREQUEST_SET_IDLE) {
-		usb_stall(0);
-		set_ep0_idle();
     }
 }
 
-
+uint16_t in_size = 0;
+uint8_t ready_for_datain = 0;
 void usb_handle_setup_packet() {
     uint32_t* buffer = (uint32_t*) &setup;
 
     for (uint16_t idx = 0; idx < 2; idx++, buffer++) {
         *buffer = *USB_OTG_FS_ENDPOINT0_FIFO;
     }
-    if (setup.bmRequestType & 0x80) {
+    if (setup.bmRequestType & 0x20) { // <----------------------- handle 0x21 control transfer
+		if (setup.bRequest == 0x09) {
+			ready_for_datain = 1;
+
+		}
+		if (setup.bRequest == BREQUEST_SET_IDLE) {
+			usb_stall(0);
+			set_ep0_idle();
+		}
+	}
+	else if (setup.bmRequestType & 0x80) {
         setup_device_to_host();
     } else {
         setup_host_to_device();
@@ -465,9 +522,10 @@ void usb_handle_setup_packet() {
 }
 
 uint8_t rr=0;
-
+uint32_t usb_buffer[10];
 void usb_read_data() {
-	uint32_t* fifo;
+	volatile uint32_t* fifo;
+	uint32_t* epbuf;
     uint32_t otg_status = USB_OTG_FS->GRXSTSP;
     uint32_t endpoint_number = otg_status & USB_OTG_GRXSTSP_EPNUM_Msk;
     uint32_t byte_count = (otg_status & USB_OTG_GRXSTSP_BCNT_Msk) >> USB_OTG_GRXSTSP_BCNT_Pos;
@@ -482,15 +540,29 @@ void usb_read_data() {
 		usb_handle_setup_packet();
 		break;
 	case 0b0100:// PCKT_STS_SETUP_COMPLETE:
-		break;
-	case 0b0010: // out packet recieved
-		//		set_ep0_idle();
-		fifo = usbEpFifo(endpoint_number);
-		for (int i = 0; i < ((byte_count + 3) >> 2); i++) {
-			(void)*fifo;
+		if (ready_for_datain) {
+            ready_for_datain = 0;
+			in_size = setup.wLength;
+            usb_set_out_ep(0, in_size, 1); // in_size
+            ep0_state = data_in;
 		}
 		break;
+	case 0b0010: // out packet recieved
+		if(byte_count == 0) break;
+		fifo = usbEpFifo(endpoint_number);
+		epbuf = usb_ep_buf[endpoint_number];//make sure it is set
+		for (uint16_t i = 0; i < ((byte_count + 3) >> 2); i++) {
+			epbuf[i] = *fifo;
+		}
+		light(epbuf[0] & 0xff);
+		set_ep0_zlpdev();
+		__asm("nop");
+		break;
 	case 0b0011: //out transfer complete
+		/* if (endpoint_number == 0 && ep0_state == data_in) { */
+		/* 	set_ep0_zlpdev();   // STATUS stage */
+		/* 	ep0_state = zlp_device; */
+		/* } */
 		break;
 	default:
 		break;
@@ -500,29 +572,37 @@ void usb_read_data() {
 
 void usb_interrupt_out_handler() {
 	uint32_t flags = USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT;
-	if (flags & USB_OTG_DOEPINT_STUP) {
-		USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_STUP;
-		// na razie nic bo nie akceptuję kilka setup pod rząd!
+	if(USB_OTG_FS_DEV->DAINT & (0x01 << 16)){
+		if (flags & USB_OTG_DOEPINT_STUP) {
+			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_STUP;
+		}
+		if (flags & USB_OTG_DOEPINT_XFRC) {
+			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_XFRC;
+			if(ep0_state == zlp_host)
+				set_ep0_idle();
+			/* if(ep0_state == data_in) */
+			/* 	set_ep0_idle(); */
+		}
+
+		if (flags & (USB_OTG_DOEPINT_OTEPDIS | USB_OTG_DOEPINT_OTEPSPR)) {
+			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = flags & (USB_OTG_DOEPINT_OTEPDIS | USB_OTG_DOEPINT_OTEPSPR);
+			//error!
+		}
+		if (address_pending) {
+			/* USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT = */
+			/* 	USB_OTG_DIEPINT_XFRC; // clear interrupt */
+			USB_OTG_FS_DEV->DCFG &= ~USB_OTG_DCFG_DAD;
+			USB_OTG_FS_DEV->DCFG |= (address << USB_OTG_DCFG_DAD_Pos);
+			address_pending = 0;
+			set_ep0_zlphost();
+		}
 	}
-    if (flags & USB_OTG_DOEPINT_XFRC) {
-        USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_XFRC;
-		if(ep0_state == zlp_host)
-			set_ep0_idle();
-    }
-
-    if (flags & (USB_OTG_DOEPINT_OTEPDIS | USB_OTG_DOEPINT_OTEPSPR)) {
-        USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = flags & (USB_OTG_DOEPINT_OTEPDIS | USB_OTG_DOEPINT_OTEPSPR);
-		//error!
-    }
-	if (address_pending) {
-		/* USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT = */
-		/* 	USB_OTG_DIEPINT_XFRC; // clear interrupt */
-		USB_OTG_FS_DEV->DCFG &= ~USB_OTG_DCFG_DAD;
-		USB_OTG_FS_DEV->DCFG |= (address << USB_OTG_DCFG_DAD_Pos);
-		address_pending = 0;
-		set_ep0_zlphost();
-	} 
-
+	/* else if(USB_OTG_FS_DEV->DAINT & (0x02 << 16)){ */
+	/* 	if (flags & USB_OTG_DOEPINT_XFRC) { */
+    /*         USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_XFRC; */
+	/* 		usb_set_out_ep(1, 1, 1); */
+	/* 	} */
+	/* } */
 }
 
 void usb_interrupt_in_handler() {
@@ -534,6 +614,8 @@ void usb_interrupt_in_handler() {
                 USB_OTG_DIEPINT_XFRC;
             if (ep0_state == data_out)
               set_ep0_zlphost();
+			/* if (ep0_state == data_in) */
+			/* 	set_ep0_idle(); */
           }
 	}
 	if (USB_OTG_FS_DEV->DAINT & 0x02) {
@@ -572,4 +654,8 @@ void OTG_FS_IRQHandler() {
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_IEPINT) {
         usb_interrupt_in_handler();
     }
+}
+
+void HardFault_Handler(unsigned int* hardfault_args) {
+	while(1);
 }

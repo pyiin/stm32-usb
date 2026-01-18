@@ -5,18 +5,22 @@
 uint8_t lightadd(uint8_t b) {
 	GPIOA->BSRR = (b&0x01)<<(15+16);
 	GPIOC->BSRR = (b&0x0e)<<(9+16);
-	GPIOB->BSRR = (b&0xe0)>>(2+16);
-	GPIOD->BSRR = (b&0x10)>>(2+16);
+	GPIOB->BSRR = (b&0xe0)<<(-2+16);
+	GPIOD->BSRR = (b&0x10)<<(-2+16);
 	return b;
 }
 
 
 uint8_t light(uint8_t b) {
+	GPIOA->BSRR = (b&0x01)<<(15+16);
+	GPIOC->BSRR = (b&0x0e)<<(9+16);
+	GPIOB->BSRR = (b&0xe0)<<(-2+16);
+	GPIOD->BSRR = (b&0x10)<<(-2+16);
 	b = ~b;
-	GPIOA->ODR = (b&0x01)<<15;
-	GPIOC->ODR = (b&0x0e)<<9;
-	GPIOB->ODR = (b&0xe0)>>2;
-	GPIOD->ODR = (b&0x10)>>2;
+	GPIOA->BSRR = (b&0x01)<<15;
+	GPIOC->BSRR = (b&0x0e)<<9;
+	GPIOB->BSRR = (b&0xe0)>>2;
+	GPIOD->BSRR = (b&0x10)>>2;
 	return b;
 }
 

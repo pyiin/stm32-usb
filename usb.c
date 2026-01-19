@@ -7,7 +7,7 @@
 setup_packet_t setup = {0};
 uint8_t address_pending = 0;
 uint16_t address;
-#define HID_REPORT_SIZE sizeof(hid_report)
+#define HID_REPORT_SIZE 78
 uint8_t l = 0;
 #define PACKETSIZ 8
 
@@ -19,12 +19,13 @@ enum  {
 	idle,
 	stup,
 	zlp_device,
-	data_out,
 	data_in,
+	data_out,
 	zlp_host,
 } ep0_state;
 
-uint8_t hid_report[] = {
+uint8_t pre_hid_report[] = {
+	HID_REPORT_SIZE, 0x00, 0x00, 0x00,
 	0x05, 0x01, //usage page
 	0x09, 0x06, //generic keyboard
 	0xa1, 0x01, //collection
@@ -65,9 +66,11 @@ uint8_t hid_report[] = {
 	0x91, 0x02,
 	0xc0
 };
+uint32_t** hid_report = (uint32_t**)&(pre_hid_report);
 
 
-device_descriptor_t usb_device_descriptor = {
+device_descriptor_t pre_usb_device_descriptor = {
+	.send_size = 18,
     .bLength = 18,
     .bDescriptorType = USB_DESCRIPTOR_DEVICE,
     .bcdUSB = USB_BCD_2,
@@ -83,13 +86,15 @@ device_descriptor_t usb_device_descriptor = {
     .iSerialNumber = 0,
     .bNumConfigurations = 1,
 };
+uint32_t** usb_device_descriptor = (uint32_t**)&(pre_usb_device_descriptor);
 
-full_configuration_descriptor_t configuration_descriptor = {
+full_configuration_descriptor_t pre_configuration_descriptor = {
+	.send_size = 9+9+7+9,
     .usb_configuration_descriptor =
 	{
             .bLength = 9,
             .bDescriptorType = USB_DESCRIPTOR_CONFIGURATION,
-            .wTotalLength = 9 + 9 + 7 + 9, // TODO
+            .wTotalLength = 9 + 9 + 7 + 9,
             .bNumInterfaces = 1,
             .bConfigurationValue = 1,
             .iConfiguration = 0, // index of string descriptor
@@ -128,11 +133,14 @@ full_configuration_descriptor_t configuration_descriptor = {
 		.bInterval = 1,
 	},
 };
+uint32_t** configuration_descriptor = (uint32_t**)&(pre_configuration_descriptor);
 
 struct str_langid_s {
+	uint32_t send_size;
 	string_descriptor_t dsc;
 	uint16_t langid;
 } str_langid = {
+	.send_size = 4,
 	.dsc = {
 		.bLength = 4,
 		.bDescriptorType = USB_DESCRIPTOR_STRING,
@@ -142,9 +150,11 @@ struct str_langid_s {
 
 #define MANUF_LEN 5
 struct str_manuf {
+	uint32_t send_size;
 	string_descriptor_t dsc;
 	uint16_t str[MANUF_LEN];
 } str_manuf = {
+	.send_size = 2*MANUF_LEN+2,
     .dsc =
 	{
 		.bLength = 2*MANUF_LEN+2,
@@ -159,9 +169,11 @@ struct str_manuf {
 #define PROD_LEN 8
 
 struct str_prod {
+	uint32_t send_size;
 	string_descriptor_t dsc;
 	uint16_t str[PROD_LEN];
 } str_prod = {
+	.send_size = 2*PROD_LEN+2,
     .dsc =
 	{
 		.bLength = 2*PROD_LEN+2,
@@ -426,59 +438,90 @@ uint8_t write_report(void* buf){
 	return 0;
 }
 
+uint32_t *str_descs[] = {
+	(uint32_t*)&str_langid,
+	(uint32_t*)&str_manuf,
+	(uint32_t*)&str_prod,
+};
+
+typedef struct descriptor_t {
+	uint32_t** buf;
+	uint8_t jmp;
+} descriptor_t;
+
+descriptor_t desc_array[] = {
+    [USB_DESCRIPTOR_DEVICE] =        {.buf = (uint32_t **)&usb_device_descriptor, .jmp = 0},
+	[USB_DESCRIPTOR_CONFIGURATION] = {.buf = (uint32_t **)&configuration_descriptor, .jmp = 0},
+    [USB_DESCRIPTOR_HID_REPORT] =    {.buf = (uint32_t **)&hid_report, .jmp = 0},
+    [USB_DESCRIPTOR_STRING] =        {.buf = (uint32_t **)str_descs, .jmp = 1},
+    [USB_DESCRIPTOR_INTERFACE] =     {},
+    [USB_DESCRIPTOR_ENDPOINT] =      {},
+    [USB_DESCRIPTOR_QUALIFIER] =     {},
+};
+
+#define MIN(x,y) (x<y ? x : y)
+void send_descriptor(uint8_t descidx, uint8_t descsub) {
+	if (desc_array[descidx].buf != 0) {
+		uint32_t** buf = desc_array[descidx].buf + descsub*desc_array[descidx].jmp;
+		usbWrite(0, *buf+1, MIN(setup.wLength, **buf)); //there is a problem with a size when multiple indexes are allowed
+		ep0_state = data_in;
+	} else
+		usb_stall(0);
+}
+
 void setup_device_to_host() {
-    if (setup.bRequest == BREQUEST_GET_DESCRIPTOR) {
-        switch ((setup.wValue & 0xff00) >> 8) { // extract descriptor type
-		case USB_DESCRIPTOR_DEVICE:
-			if (setup.wLength > 18) {
-				usbWrite(0, &usb_device_descriptor, 18);
-			} else {
-				usbWrite(0, &usb_device_descriptor, setup.wLength);
-			}
-			ep0_state = data_out;
-			break;
-		case USB_DESCRIPTOR_CONFIGURATION:
-			if (setup.wLength == 9) { // first time
-				usbWrite(0, &configuration_descriptor, setup.wLength);
-			}
-			else if (setup.wLength ==
-					 configuration_descriptor.usb_configuration_descriptor.wTotalLength) {
-				usbWrite(0, &configuration_descriptor, setup.wLength);
-			}
-			ep0_state = data_out;
-			break;
-		case USB_DESCRIPTOR_HID_REPORT:
-			usbWrite(0,&hid_report, HID_REPORT_SIZE);
-			ep0_state = data_out;
-			break;
-		case USB_DESCRIPTOR_STRING:
-			switch (setup.wValue & 0x00ff) {
-			case 0:
-				usbWrite(0, &str_langid, 4);
-				break;
-			case 1:
-				usbWrite(0, &str_manuf, 2*MANUF_LEN+2);
-				break;
-			case 2:
-				usbWrite(0, &str_prod, 2*PROD_LEN+2);
-				break;
-			}
-			ep0_state = data_out;
-			break;
-		case USB_DESCRIPTOR_INTERFACE:
-		case USB_DESCRIPTOR_ENDPOINT:
-		case USB_DESCRIPTOR_QUALIFIER:
-		default:
-			usb_stall(0);
-			break;
-        }
+	if (setup.bRequest == BREQUEST_GET_DESCRIPTOR) {
+		send_descriptor((setup.wValue & 0xff00)>>8, setup.wValue & 0x00ff);
+		/* switch ((setup.wValue & 0xff00) >> 8) { // extract descriptor type */
+		/* case USB_DESCRIPTOR_DEVICE: */
+		/* 	if (setup.wLength > 18) { */
+		/* 		usbWrite(0, &usb_device_descriptor, 18); */
+		/* 	} else { */
+		/* 		usbWrite(0, &usb_device_descriptor, setup.wLength); */
+		/* 	} */
+		/* 	ep0_state = data_in; */
+		/* 	break; */
+		/* case USB_DESCRIPTOR_CONFIGURATION: */
+		/* 	if (setup.wLength == 9) { // first time */
+		/* 		usbWrite(0, &configuration_descriptor, setup.wLength); */
+		/* 	} else if (setup.wLength == */
+		/* 			   configuration_descriptor.usb_configuration_descriptor */
+		/* 			   .wTotalLength) { */
+		/* 		usbWrite(0, &configuration_descriptor, setup.wLength); */
+		/* 	} */
+		/* 	ep0_state = data_in; */
+		/* 	break; */
+		/* case USB_DESCRIPTOR_HID_REPORT: */
+		/* 	usbWrite(0, &hid_report, HID_REPORT_SIZE); */
+		/* 	ep0_state = data_in; */
+		/* 	break; */
+		/* case USB_DESCRIPTOR_STRING: */
+		/* 	switch (setup.wValue & 0x00ff) { */
+		/* 	case 0: */
+		/* 		usbWrite(0, &str_langid, 4); */
+		/* 		break; */
+		/* 	case 1: */
+		/* 		usbWrite(0, &str_manuf, 2 * MANUF_LEN + 2); */
+		/* 		break; */
+		/* 	case 2: */
+		/* 		usbWrite(0, &str_prod, 2 * PROD_LEN + 2); */
+		/* 		break; */
+		/* 	} */
+		/* 	ep0_state = data_in; */
+		/* 	break; */
+		/* case USB_DESCRIPTOR_INTERFACE: */
+		/* case USB_DESCRIPTOR_ENDPOINT: */
+		/* case USB_DESCRIPTOR_QUALIFIER: */
+		/* default: */
+		/* 	usb_stall(0); */
+		/* 	break; */
+		/* } */
 
-
-    } else if (setup.bRequest == BREQUEST_GET_STATUS) {
+	} else if (setup.bRequest == BREQUEST_GET_STATUS) {
 		uint16_t status = USB_STATUS_RESPONSE;
 		usbWrite(0, &status, 2);
-		ep0_state = data_out;
-    }
+		ep0_state = data_in;
+	}
 }
 
 void setup_host_to_device() {
@@ -544,7 +587,7 @@ void usb_read_data() {
             ready_for_datain = 0;
 			in_size = setup.wLength;
             usb_set_out_ep(0, in_size, 1); // in_size
-            ep0_state = data_in;
+            ep0_state = data_out;
 		}
 		break;
 	case 0b0010: // out packet recieved
@@ -556,10 +599,9 @@ void usb_read_data() {
 		}
 		light(epbuf[0] & 0xff);
 		set_ep0_zlpdev();
-		__asm("nop");
 		break;
 	case 0b0011: //out transfer complete
-		/* if (endpoint_number == 0 && ep0_state == data_in) { */
+		/* if (endpoint_number == 0 && ep0_state == data_out) { */
 		/* 	set_ep0_zlpdev();   // STATUS stage */
 		/* 	ep0_state = zlp_device; */
 		/* } */
@@ -580,7 +622,7 @@ void usb_interrupt_out_handler() {
 			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_XFRC;
 			if(ep0_state == zlp_host)
 				set_ep0_idle();
-			/* if(ep0_state == data_in) */
+			/* if(ep0_state == data_out) */
 			/* 	set_ep0_idle(); */
 		}
 
@@ -612,9 +654,9 @@ void usb_interrupt_in_handler() {
             /* // transfer finished interrupt */
             USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPINT =
                 USB_OTG_DIEPINT_XFRC;
-            if (ep0_state == data_out)
+            if (ep0_state == data_in)
               set_ep0_zlphost();
-			/* if (ep0_state == data_in) */
+			/* if (ep0_state == data_out) */
 			/* 	set_ep0_idle(); */
           }
 	}

@@ -17,6 +17,7 @@ typedef struct setup_packet_t {
 } setup_packet_t;
 
 typedef struct device_descriptor_t {
+	uint32_t send_size;
     uint8_t bLength;
     uint8_t bDescriptorType;
     uint16_t bcdUSB;
@@ -82,6 +83,7 @@ typedef struct __attribute__((packed)) HID_descriptor_t {
 
 
 typedef struct __attribute__((packed)) full_configuration_descriptor_t {
+	uint32_t send_size;
 	configuration_descriptor_t usb_configuration_descriptor;
 	interface_descriptor_t usb_interface_descriptor;
 	HID_descriptor_t usb_HID_descriptor;
@@ -101,7 +103,6 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 #define USB_NO_SPECIFIC_PROTOCOL 0x00 //
 
 #define USB_DESCRIPTOR_DEVICE 0x01
-
 #define USB_DESCRIPTOR_CONFIGURATION 0x02
 #define USB_DESCRIPTOR_STRING 0x03
 #define USB_DESCRIPTOR_INTERFACE 0x04

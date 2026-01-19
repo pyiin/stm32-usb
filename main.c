@@ -53,36 +53,6 @@ void write_string_packed(uint8_t* buf, uint32_t len){
 	while(!write_report(&empty));
 }
 
-/* void write_string_packed2(uint8_t* buf, uint32_t len){ */
-/* 	uint32_t idx = 0; */
-/* 	uint32_t prev_idx = 0; */
-/* 	uint32_t idx_tmp = 0; */
-/* 	while(idx < len){ */
-/* 		idx_tmp = idx; */
-/* 		for (uint8_t i = 2; i < 8; i++) keys[i] = 0; */
-/* 		for (uint8_t i = 2; (i < 8) & (idx < len); i++,idx++) { */
-/* 			for(uint32_t j = prev_idx; j < idx; j++){ */
-/* 				if(buf[idx] == buf[j]) */
-/* 					goto write; */
-/* 			} */
-/*             keys[i] = buf[idx] - 'a' + 4; */
-/*             if (keys[i] > 0x27) */
-/* 				keys[i] = 0x00; */
-/*             if (buf[idx] == ' ') */
-/* 				keys[i] = 0x2c; */
-/*             if (buf[idx] == '#') */
-/* 				keys[i] = 0x28; */
-/* 		} */
-/* 	write: */
-/* 		prev_idx = idx_tmp; */
-/* 		while(!write_report(&keys)); */
-/* 	} */
-/* 	keys[2] = 0x28; */
-/* 	while(!write_report(&empty)); */
-/* 	while(!write_report(&keys)); */
-/* 	while(!write_report(&empty)); */
-/* } */
-
 uint32_t buffer[10];
 
 void lightdebug(uint32_t t) {
@@ -140,7 +110,8 @@ int main(void)
 	usb_device_init();
 	usb_ep_buf_set(0,buffer);
 
-	
+	//33,34,36,37
+	//pb12,13,15  pc6
 	GPIOB->CRH = 0x80880000; //i2s ports remapped to input pull down;
 	GPIOB->ODR &= ~0x10110000;
 	EXTI->IMR |= 0b1011<<12; //interrrupt
@@ -150,23 +121,14 @@ int main(void)
 	NVIC_EnableIRQ(EXTI15_10_IRQn);
 	NVIC_SetPriority(EXTI15_10_IRQn,1);
 	
-	uint8_t st = 0;
-	uint8_t b = 0;
-	wait_clk(7200000,5);
-
-	//33,34,36,37
-	//pb12,13,15  pc6
+	//	wait_clk(7200000,5);
 	while (1) {
-		/* if(b==0) */
-		/* 	st = write_report(&empty); */
-		/* else */
-		/* 	st = write_report(&keys); */
-		/* if(st == 1) b = (++b)%2; */
-		/* write_string_packed((uint8_t*)&bee_movie, sizeof(bee_movie)); */
-				//		write_string_packed((uint8_t*)test, sizeof(test));
+		//		write_string_packed((uint8_t*)test, sizeof(test));
 		wait_clk(7200000, 1);
 		light(buffer[0] & 0xff);
-		/* lightdebug(buffer[0]); */
-		//		if(st) keys[2] = ++keys[2]%30;
 	}
+}
+
+void HardFault_Handler(unsigned int* hardfault_args) {
+	while(1);
 }

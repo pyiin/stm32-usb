@@ -25,7 +25,7 @@ enum  {
 
 
 // ======================= descriptors =======================
-
+// every report needs to have uint32 size value in the beginning that is skipped when sending
 #define HID_REPORT_SIZE 78
 uint8_t pre_hid_report[] = {
 	HID_REPORT_SIZE, 0x00, 0x00, 0x00,
@@ -86,7 +86,7 @@ device_descriptor_t pre_usb_device_descriptor = {
     .bcdDevice = 0x0100,
     .iManufacturer = 1,
     .iProduct = 2,
-    .iSerialNumber = 0,
+    .iSerialNumber = 3,
     .bNumConfigurations = 1,
 };
 uint32_t** usb_device_descriptor = (uint32_t**)&(pre_usb_device_descriptor);
@@ -188,10 +188,30 @@ struct str_prod {
 	},
 };
 
+#define SN_LEN 12
+struct str_sn {
+	uint32_t send_size;
+	string_descriptor_t dsc;
+	uint16_t str[SN_LEN];
+} str_sn = {
+	.send_size = 2*SN_LEN+2,
+    .dsc =
+	{
+		.bLength = 2*SN_LEN+2,
+		.bDescriptorType = USB_DESCRIPTOR_STRING,
+	},
+    .str =
+	{
+		'0', '0', '0', '0', '0', '0',
+		'0', '0', '0', '0', '0', '0'
+	},
+};
+
 uint32_t *str_descs[] = {
 	(uint32_t*)&str_langid,
 	(uint32_t*)&str_manuf,
 	(uint32_t*)&str_prod,
+	(uint32_t*)&str_sn,
 };
 
 // ======================= helper fn =======================
@@ -342,6 +362,11 @@ void usb_set_out_ep(uint8_t epnum, uint8_t size, uint8_t pcktcnt) {
 void clock_setup(){
 	RCC->CR |= RCC_CR_HSEON; //enable hse
 	while(!(RCC->CR & RCC_CR_HSERDY));
+
+	RCC->BDCR |= RCC_BDCR_LSEON; //enable lse
+	while(!(RCC->CR & RCC_BDCR_LSEON)) light(0xab);
+	RCC->BDCR |= (1 <<RCC_BDCR_RTCSEL_Pos);
+	RCC->BDCR |= RCC_BDCR_RTCEN;
 	
 	//setup prediv12 and prediv1scr
 	RCC->CFGR |= (0b0111<<RCC_CFGR_PLLMULL_Pos);
@@ -443,13 +468,14 @@ uint8_t write_report(void* buf){
 typedef struct descriptor_t {
 	uint32_t** buf;
 	uint8_t jmp;
+	uint8_t maxidx;
 } descriptor_t;
 
 descriptor_t desc_array[] = {
-    [USB_DESCRIPTOR_DEVICE] =        {.buf = (uint32_t **)&usb_device_descriptor, .jmp = 0},
-	[USB_DESCRIPTOR_CONFIGURATION] = {.buf = (uint32_t **)&configuration_descriptor, .jmp = 0},
-    [USB_DESCRIPTOR_HID_REPORT] =    {.buf = (uint32_t **)&hid_report, .jmp = 0},
-    [USB_DESCRIPTOR_STRING] =        {.buf = (uint32_t **)str_descs, .jmp = 1},
+    [USB_DESCRIPTOR_DEVICE] =        {.buf = (uint32_t **)&usb_device_descriptor, .jmp = 0, .maxidx = 0xff},
+	[USB_DESCRIPTOR_CONFIGURATION] = {.buf = (uint32_t **)&configuration_descriptor, .jmp = 0, .maxidx = 0xff},
+    [USB_DESCRIPTOR_HID_REPORT] =    {.buf = (uint32_t **)&hid_report, .jmp = 0, .maxidx = 0xff},
+    [USB_DESCRIPTOR_STRING] =        {.buf = (uint32_t **)str_descs, .jmp = 1, .maxidx = 4},
     [USB_DESCRIPTOR_INTERFACE] =     {},
     [USB_DESCRIPTOR_ENDPOINT] =      {},
     [USB_DESCRIPTOR_QUALIFIER] =     {},
@@ -457,12 +483,13 @@ descriptor_t desc_array[] = {
 
 #define MIN(x,y) (x<y ? x : y)
 void send_descriptor(uint8_t descidx, uint8_t descsub) {
-	if (desc_array[descidx].buf != 0) {
-		uint32_t** buf = desc_array[descidx].buf + descsub*desc_array[descidx].jmp;
-		usbWrite(0, *buf+1, MIN(setup.wLength, **buf)); //there is a problem with a size when multiple indexes are allowed
-		ep0_state = data_in;
-	} else
+	if (desc_array[descidx].buf == 0 || descsub >= desc_array[descidx].maxidx)
 		usb_stall(0);
+	else {
+		uint32_t** buf = desc_array[descidx].buf + descsub*desc_array[descidx].jmp;
+		usbWrite(0, *buf+1, MIN(setup.wLength, **buf));
+		ep0_state = data_in;
+	}
 }
 
 void setup_device_to_host() {

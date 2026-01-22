@@ -46,6 +46,7 @@ MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 64K
   FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 128K
+  /* PENDRIVE    (rx)    : ORIGIN = 0x8010000,   LENGTH = 64K */
 }
 
 /* Sections */
@@ -165,6 +166,12 @@ SECTIONS
     __bss_end__ = _ebss;
   } >RAM
 
+  /* .pendrive 0x8010000 (NOLOAD): */
+  /* { */
+  /* 	_spendrive = .; */
+  /* 	*(.pendrive) */
+  /* 	_ependrive = .; */
+  /* } >PENDRIVE */
   /* User_heap_stack section, used to check that there is enough "RAM" Ram  type memory left */
   ._user_heap_stack :
   {

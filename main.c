@@ -125,7 +125,7 @@ int main(void)
 	while (1) {
 		//		write_string_packed((uint8_t*)test, sizeof(test));
 		wait_clk(7200000, 1);
-		light(buffer[0] & 0xff);
+		//		light(buffer[0] & 0xff);
 	}
 }
 

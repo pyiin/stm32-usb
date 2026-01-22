@@ -85,9 +85,12 @@ typedef struct __attribute__((packed)) HID_descriptor_t {
 typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 	uint32_t send_size;
 	configuration_descriptor_t usb_configuration_descriptor;
-	interface_descriptor_t usb_interface_descriptor;
+	interface_descriptor_t usb_interface_hid_descriptor;
 	HID_descriptor_t usb_HID_descriptor;
 	endpoint_descriptor_t usb_endpoint1_descriptor;
+	interface_descriptor_t usb_interface_bbb_descriptor;
+	endpoint_descriptor_t usb_endpoint2in_descriptor;
+	endpoint_descriptor_t usb_endpoint2out_descriptor;
 } full_configuration_descriptor_t;
 
 
@@ -99,6 +102,7 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 
 #define USB_BCD_2 0x0200 //USB 2.0
 #define USB_HID_CLASS 0x03
+#define USB_MASS_STORAGE 0x08
 #define USB_CDC_ACM_SUBCLASS 0x00
 #define USB_NO_SPECIFIC_PROTOCOL 0x00 //
 
@@ -119,7 +123,7 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 
 #define USB_STATUS_RESPONSE 0x0000
 
-void usbWrite(uint8_t ep, void *data, uint8_t len);
+void usbZLP(uint8_t ep);
 volatile uint32_t* usbEpFifo(uint8_t ep);
 USB_OTG_OUTEndpointTypeDef* usbEpout(uint8_t ep);
 USB_OTG_INEndpointTypeDef* usbEpin(uint8_t ep);
@@ -129,3 +133,8 @@ void usb_core_init();
 void usb_device_init();
 uint8_t write_report(void*);
 void usb_ep_buf_set(uint8_t ep, uint32_t *buf);
+void read_ep_fifo(uint32_t*, uint8_t, uint32_t);
+void usbWrite(uint8_t ep, void* data, uint32_t len);
+void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint8_t packet_size);
+void ep_out_enable(uint8_t epn, uint8_t eptype, uint8_t packet_size);
+void usb_set_out_ep(uint8_t epnum, uint32_t size, uint8_t pcktcnt);

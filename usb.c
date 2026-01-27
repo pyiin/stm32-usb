@@ -610,12 +610,12 @@ void usb_read_data() {
 		if(byte_count == 0) break;
 		fifo = usbEpFifo(endpoint_number);
 		epbuf = usb_ep_buf[endpoint_number];//make sure it is set
-		for (uint16_t i = 0; i < ((byte_count + 3) >> 2); i++, epbuf++) {//TODO: increase the whole buffer
+		for (uint16_t i = 0; i < ((byte_count + 3) >> 2); i++, epbuf++)
 			*epbuf = *fifo;
-		}
-		usb_ep_buf[endpoint_number] = epbuf;
+
+		/* usb_ep_buf[endpoint_number] = epbuf; */
 		if(endpoint_number == 2)
-			__asm("nop");
+			scsi_packet_recieved(byte_count);
 		if(endpoint_number == 0)
 			light(epbuf[0] & 0xff);
 		break;

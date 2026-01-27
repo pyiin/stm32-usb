@@ -1,13 +1,18 @@
 #include "usb.h"
 #include "stm32f1xx.h"
 #include "usb_scsi.h"
+#include "flash.h"
+#include "misc.h"
 
 #define SCSI_EP 2
+#define BLOCK_SIZE_pos 11
+#define BLOCK_SIZE (1<<BLOCK_SIZE_pos)
+#define BASE_BLOCK_OFFSET 16
 //CBW 32 bytes, CSW 13 bytes exactly
 
 /* __attribute__((section(".pendrive"))) */
 uint8_t data[48*1024];
-/* uint8_t* data = (uint8_t*)0x8010000; */
+uint16_t* flash = (uint16_t*)(0x8000000 + (BASE_BLOCK_OFFSET<<BLOCK_SIZE_pos));
 uint32_t sent = 0;
 uint32_t written = 0;
 
@@ -37,6 +42,7 @@ void parse_scsi_command();
 void reply_bulk_scsi();
 void scsi_packet_sent();
 void scsi_read();
+void scsi_packet_recieved(uint8_t);
 
 enum {
 	cbw,
@@ -46,6 +52,7 @@ enum {
 } scsi_status = cbw;
 
 void init_scsi() {
+	flash_erase(BASE_BLOCK_OFFSET);
 	usb_ep_buf_set(2, (uint32_t *)&scsi_cbw);
 	ep_in_enable(2, 2, EP_bulk, 64);
 	ep_out_enable(2, EP_bulk, 64);
@@ -122,14 +129,14 @@ uint8_t inquiry_response[36] = {
 }; // minimum 36 bytes
 
 uint8_t capacity[8] = {
-	0x00, 0x00, 0x00, 0x5f,
-	0x00, 0x00, 0x02, 0x00,
+	0x00, 0x00, 0x00, 48,
+	0x00, 0x00, (1<<(BLOCK_SIZE_pos-8)), 0x00, //block_size
 };
 
 void scsi_read() {
 	uint32_t block = scsi_cbw.cbw[4]<<8 | scsi_cbw.cbw[5];
 	uint16_t numblocks;//TODO start block
-	usbWrite(2, (uint32_t*)(data+(block<<9)+sent), 128);
+	usbWrite(2, (uint32_t*)(flash+(block<<BLOCK_SIZE_pos)+sent), 128);
 	sent += 128;
 	if(sent < scsi_cbw.data_transfer_length)
 		scsi_status = cbw;
@@ -137,11 +144,30 @@ void scsi_read() {
 		scsi_status = in;
 }
 
+uint16_t* flash_buffer;
+
+void scsi_packet_recieved(uint8_t psize) {
+	flash_unlock();
+	FLASH->CR |= FLASH_CR_PG;
+	if(scsi_cbw.cbw[0] != 0x2a) return;
+	for (uint8_t i = 0; i < ((psize+1)>>1); i++) {
+		*(flash_buffer++) = *(((uint16_t*)data)+i);
+		flash_ready_wait();
+	}
+	usb_ep_buf_set(2, (uint32_t*)data);
+	FLASH->CR &= ~FLASH_CR_PG;
+	flash_lock();
+}
 
 void scsi_write() {
 	uint32_t block = scsi_cbw.cbw[4]<<8 | scsi_cbw.cbw[5];
-	uint16_t numblocks;//TODO start block
-	usb_ep_buf_set(2, (uint32_t *)(data + (block<<9)));
+	uint16_t numblocks = scsi_cbw.cbw[7]<<8 | scsi_cbw.cbw[8];
+	for(uint16_t i = 0; i<numblocks; i++)
+		flash_erase(block+i+BASE_BLOCK_OFFSET);
+
+	flash_buffer = flash + (block<<(BLOCK_SIZE_pos - 1));
+	usb_ep_buf_set(2, (uint32_t*)data);
+	/* usb_ep_buf_set(2, (uint32_t *)(data + (block<<BLOCK_SIZE_pos))); */
 	usb_set_out_ep(2, scsi_cbw.data_transfer_length, scsi_cbw.data_transfer_length>>6);
 	/* scsi_csw.data_residue = scsi_cbw.data_transfer_length - 512; */
 	scsi_status = csw;

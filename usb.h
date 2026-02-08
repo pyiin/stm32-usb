@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "stm32f1xx.h"
+#include "usb_audio.h"
 
 #define USB_OTG_FS_DEV    ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
 #define USB_OTG_FS_DEV_ENDPOINT0_OUT     ((USB_OTG_OUTEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_OUT_ENDPOINT_BASE))
@@ -85,12 +86,16 @@ typedef struct __attribute__((packed)) HID_descriptor_t {
 typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 	uint32_t send_size;
 	configuration_descriptor_t usb_configuration_descriptor;
-	interface_descriptor_t usb_interface_hid_descriptor;
-	HID_descriptor_t usb_HID_descriptor;
+	interface_descriptor_t usb_interface_control_descriptor;
+	usb_audio_class_header_t audio_class;
+	input_terminal_ACD_t input_terminal;
+	output_terminal_ACD_t output_terminal;
+	interface_descriptor_t usb_interface_streaming0_descriptor;
+	interface_descriptor_t usb_interface_streaming1_descriptor;
+	audio_stream_ACD_t audio_stream;
+	format_type_ACD_t format_type;
 	endpoint_descriptor_t usb_endpoint1_descriptor;
-	interface_descriptor_t usb_interface_bbb_descriptor;
-	endpoint_descriptor_t usb_endpoint2in_descriptor;
-	endpoint_descriptor_t usb_endpoint2out_descriptor;
+	isynchronous_endpoint_ACD_t endpoint_ACD;
 } full_configuration_descriptor_t;
 
 
@@ -102,7 +107,7 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 
 #define USB_BCD_2 0x0200 //USB 2.0
 #define USB_HID_CLASS 0x03
-#define USB_AUDIO 0x01
+#define USB_AUDIO_CLASS 0x01
 #define USB_MASS_STORAGE 0x08
 #define USB_CDC_ACM_SUBCLASS 0x00
 #define USB_NO_SPECIFIC_PROTOCOL 0x00 //
@@ -121,6 +126,7 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 #define BREQUEST_GET_DESCRIPTOR 0x06
 #define BREQUEST_SET_REPORT 0x0
 #define BREQUEST_SET_CONFIGURATION 0x09
+#define BREQUEST_SET_INTERFACE 0x0b
 
 #define USB_STATUS_RESPONSE 0x0000
 

@@ -8,6 +8,9 @@ usb.o: usb.c
 usb_scsi.o: usb_scsi.c
 	arm-none-eabi-gcc $^ ${PARAMS} -o $@
 
+usb_audio.o: usb_audio.c
+	arm-none-eabi-gcc $^ ${PARAMS} -o $@
+
 main.o: main.c
 	arm-none-eabi-gcc $^ ${PARAMS} -o $@
 
@@ -17,8 +20,8 @@ misc.o: misc.c
 flash.o: flash.c
 	arm-none-eabi-gcc $^ ${PARAMS} -o $@
 
-main.elf: main.o misc.o usb.o usb_scsi.o flash.o STM32F105RBTX_FLASH.ld startup_stm32f105rbtx.s
-	arm-none-eabi-gcc -o $@ main.o usb.o misc.o usb_scsi.o flash.o startup_stm32f105rbtx.s  -mcpu=cortex-m3 -T"STM32F105RBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="f105_test.map" -Wl,--gc-sections -static --specs=rdimon.specs -lrdimon -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group -ggdb3
+main.elf: main.o misc.o usb.o usb_scsi.o usb_audio.o flash.o STM32F105RBTX_FLASH.ld startup_stm32f105rbtx.s
+	arm-none-eabi-gcc -o $@ main.o usb.o misc.o usb_scsi.o usb_audio.o flash.o startup_stm32f105rbtx.s  -mcpu=cortex-m3 -T"STM32F105RBTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="f105_test.map" -Wl,--gc-sections -static --specs=rdimon.specs -lrdimon -mfloat-abi=soft -mthumb -Wl,--start-group -lc -lm -Wl,--end-group -ggdb3
 
 main.bin: main.elf
 	 arm-none-eabi-objcopy -O binary main.elf main.bin

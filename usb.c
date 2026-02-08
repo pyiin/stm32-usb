@@ -8,8 +8,11 @@ setup_packet_t setup = {0};
 uint8_t address_pending = 0;
 uint16_t address;
 
+
+uint32_t buf[192];
+
 uint8_t l = 0;
-#define PACKETSIZ 8
+#define PACKETSIZ 192
 #define RX_FIFO_DEPTH_IN_WORDS 150
 #define TX0_FIFO_DEPTH_IN_WORDS 64
 #define TX1_FIFO_DEPTH_IN_WORDS 16
@@ -96,75 +99,131 @@ device_descriptor_t pre_usb_device_descriptor = {
 };
 uint32_t** usb_device_descriptor = (uint32_t**)&(pre_usb_device_descriptor);
 
-#define CONF_SIZE 9+9+9+7+9+7+7
+#define CONF_SIZE 9+9+9+9+9+9+7+11+7+12+7
 
 full_configuration_descriptor_t pre_configuration_descriptor = {
-	.send_size = CONF_SIZE,
-    .usb_configuration_descriptor = {
-		.bLength = 9,
-		.bDescriptorType = USB_DESCRIPTOR_CONFIGURATION,
-		.wTotalLength = CONF_SIZE,
-		.bNumInterfaces = 2,
-		.bConfigurationValue = 1,
-		.iConfiguration = 0, // index of string descriptor
-		.bmAttributes = 0b10000000,
-		.bMaxPower = 50, // in 2mA units
-	},
-    .usb_interface_hid_descriptor = {
-		.bLength = 9,
-		.bDescriptorType = 0x04,
-		.bInterfaceNumber = 0,
-		.bAlternateSetting = 0,
-		.bNumEndpoints = 1,
-		.bInterfaceClass = USB_HID_CLASS,
-		.bInterfaceSubClass = 0x01,
-		.bInterfaceProtocol = 0x01,
-		.iInterface = 0,
-	},
-    .usb_HID_descriptor = {
-		.bLength = 9,
-		.bDescriptorType = 0x21,
-		.bcdHid = 0x0111,
-		.bCountryCode = 0x00,
-		.bNumDescriptors = 0x01,
-		.bHidDescriptorType = 0x22,
-		.wDescriptorLength = HID_REPORT_SIZE,
-	},
-	.usb_endpoint1_descriptor = {
-		.bLength = 7,
-		.bDescriptorType = 0x05,
-		.bEndpointAddress = 0x81,
-		.bmAttributes = 0b00000011,
-		.wMaxPacketSize = PACKETSIZ,
-		.bInterval = 1,
-	},
-	.usb_interface_bbb_descriptor = {
+    .send_size = CONF_SIZE,
+    .usb_configuration_descriptor =
+        {
+            .bLength = 9,
+            .bDescriptorType = USB_DESCRIPTOR_CONFIGURATION,
+            .wTotalLength = CONF_SIZE,
+            .bNumInterfaces = 2,
+            .bConfigurationValue = 1,
+            .iConfiguration = 0, // index of string descriptor
+            .bmAttributes = 0b10000000,
+            .bMaxPower = 50, // in 2mA units
+        },
+    .usb_interface_control_descriptor =
+        {
+            .bLength = 9,
+            .bDescriptorType = 0x04,
+            .bInterfaceNumber = 0,
+            .bAlternateSetting = 0,
+            .bNumEndpoints = 0,
+            .bInterfaceClass = USB_AUDIO_CLASS,
+            .bInterfaceSubClass = 0x01,
+            .bInterfaceProtocol = 0x00,
+            .iInterface = 0,
+        },
+    .audio_class =
+        {
+            .bLength = 9,
+            .bDescriptorType = 0x24,
+            .bDescriptorSubtype = 0x01,
+            .bcdADC = 0x0100,
+            .wTotalLength = 9 + 12 + 9,
+            .bInCollection = 1,
+            .baInterfaceNr = 1,
+        },
+    .input_terminal =
+        {
+            .bLength = 12,
+            .bDescriptorType = 0x24,
+            .bDescriptorSubtype = 0x02,
+            .bTerminalID = 0x01,
+            .wTerminalType = 0x0101,
+            .bAssocTerminal = 0x00,
+            .bNrChannels = 2,
+            .wChannelConfig = 0x03,
+            .iChannelNames = 0,
+            .iTerminal = 0,
+        },
+    .output_terminal =
+        {
+            .bLength = 9,
+            .bDescriptorType = 0x24,
+            .bDescriptorSubtype = 0x03,
+            .bTerminalID = 0x02,
+            .wTerminalType = 0x0301,
+            .bAssocTerminal = 0x00,
+            .bSourceID = 0x01,
+            .iTerminal = 0x00,
+        },
+    .usb_interface_streaming0_descriptor =
+        {
             .bLength = 9,
             .bDescriptorType = 0x04,
             .bInterfaceNumber = 1,
             .bAlternateSetting = 0,
-            .bNumEndpoints = 2,
-            .bInterfaceClass = USB_MASS_STORAGE,
-            .bInterfaceSubClass = 0x06,
-            .bInterfaceProtocol = 0x50,
+            .bNumEndpoints = 0,
+            .bInterfaceClass = USB_AUDIO_CLASS,
+            .bInterfaceSubClass = 0x02,
+            .bInterfaceProtocol = 0x00,
             .iInterface = 0,
-	},
-	.usb_endpoint2in_descriptor = {
-		.bLength = 7,
-		.bDescriptorType = 0x05,
-		.bEndpointAddress = 0x82,
-		.bmAttributes = 0x02,
-		.wMaxPacketSize = 64,
-		.bInterval = 0,
-	},
-	.usb_endpoint2out_descriptor = {
-		.bLength = 7,
-		.bDescriptorType = 0x05,
-		.bEndpointAddress = 0x02,
-		.bmAttributes = 0x02,
-		.wMaxPacketSize = 64,
-		.bInterval = 0,
-	},
+        },
+    .usb_interface_streaming1_descriptor =
+        {
+            .bLength = 9,
+            .bDescriptorType = 0x04,
+            .bInterfaceNumber = 1,
+            .bAlternateSetting = 1,
+            .bNumEndpoints = 1,
+            .bInterfaceClass = USB_AUDIO_CLASS,
+            .bInterfaceSubClass = 0x02,
+            .bInterfaceProtocol = 0x00,
+            .iInterface = 0,
+        },
+    .audio_stream =
+        {
+            .bLength = 7,
+            .bDescriptorType = 0x24,
+            .bDescriptorSubtype = 0x01,
+            .bTerminalLink = 0x02,
+            .bDelay = 0,
+            .wFormatTag = 0x01,
+        },
+    .format_type =
+        {
+            .bLength = 11,
+            .bDescriptorType = 0x24,
+            .bDescriptorSubtype = 0x02,
+            .bFormatType = 0x01,
+            .bNrChannels = 0x02,
+            .bSubFrameSize = 0x02,
+            .bBitResolution = 0x10,
+            .bSamFreqType = 0x01,
+            .bfreq0 = 0x80,
+            .bfreq1 = 0xbb,
+            .bfreq2 = 0x00,
+        },
+    .usb_endpoint1_descriptor =
+        {
+            .bLength = 7,
+            .bDescriptorType = 0x05,
+            .bEndpointAddress = 0x01,
+            .bmAttributes = 0b00000101, // isynchronous?
+            .wMaxPacketSize = PACKETSIZ,
+            .bInterval = 1,
+        },
+    .endpoint_ACD = {
+		    .bLength = 7,
+            .bDescriptorType = 0x25,
+            .bDescriptorSubtype = 0x01,
+            .bmAttributes = 0b00000000,
+            .bLockDelayUnits = 0x00,
+            .wLockDelay = 0,
+    }
 };
 uint32_t** configuration_descriptor = (uint32_t**)&(pre_configuration_descriptor);
 
@@ -199,7 +258,7 @@ struct str_manuf {
 	},
 };
 
-#define PROD_LEN 8
+#define PROD_LEN 13
 
 struct str_prod {
 	uint32_t send_size;
@@ -214,7 +273,7 @@ struct str_prod {
 	},
     .str =
 	{
-		'k', 'e', 'y', 'b', 'o', 'a', 'r', 'd'
+		's', 't', 'r', 'e', 'm', 'i', 'n', 'g', ' ', 't', 'e', 's', 't',
 	},
 };
 
@@ -546,10 +605,18 @@ void setup_host_to_device() {
     }
 	else if(setup.bRequest == BREQUEST_SET_CONFIGURATION) {
 		set_ep0_zlpdev();
-		init_scsi();
-		ep_in_enable(1, 1, EP_interrupt, PACKETSIZ);
+		/* init_scsi(); */
+
 		can_write = 1;
     }
+	else if(setup.bRequest == BREQUEST_SET_INTERFACE) {
+		set_ep0_zlpdev();
+		if (setup.wValue == 1) {
+			usb_ep_buf_set(1, buf);
+			ep_out_enable(1, EP_isyncronous, PACKETSIZ);
+			usb_set_out_ep(1, PACKETSIZ, 1);
+		}
+	}
 }
 
 uint16_t in_size = 0;
@@ -614,6 +681,8 @@ void usb_read_data() {
 		usb_ep_buf[endpoint_number] = epbuf;
 		if(endpoint_number == 2)
 			scsi_packet_recieved(byte_count);
+		if(endpoint_number == 1)
+			stream_packet_recieved(byte_count);
 		if(endpoint_number == 0)
 			light(epbuf[0] & 0xff);
 		break;

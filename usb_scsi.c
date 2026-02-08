@@ -11,8 +11,8 @@
 //CBW 32 bytes, CSW 13 bytes exactly
 
 /* __attribute__((section(".pendrive"))) */
-uint8_t data[48*1024];
-uint16_t* flash = (uint16_t*)(0x8000000 + (BASE_BLOCK_OFFSET<<BLOCK_SIZE_pos));
+uint8_t data[4*1024];
+uint8_t* flash = (uint8_t*)(0x8000000 + (BASE_BLOCK_OFFSET<<BLOCK_SIZE_pos));
 uint32_t sent = 0;
 uint32_t written = 0;
 
@@ -52,7 +52,6 @@ enum {
 } scsi_status = cbw;
 
 void init_scsi() {
-	flash_erase(BASE_BLOCK_OFFSET);
 	usb_ep_buf_set(2, (uint32_t *)&scsi_cbw);
 	ep_in_enable(2, 2, EP_bulk, 64);
 	ep_out_enable(2, EP_bulk, 64);
@@ -121,17 +120,19 @@ uint8_t inquiry_response[36] = {
     // https://knowledge.seagate.com/files/staticfiles/support/docs/manual/Interface%20manuals/100293068m.pdf,
     // p.104
     0x00,             // direct access device
-    0x80,             // removable
-    0x06,             // jakaś wersja
+    0x00,             // removable
+    0x04,             // spc-2
     0x02,             // response data format
     0x03,             // additional length TODO
     0x00, 0x00, 0x00, // not supported
 }; // minimum 36 bytes
 
 uint8_t capacity[8] = {
-	0x00, 0x00, 0x00, 48,
+	0x00, 0x00, 0x00, 47,
 	0x00, 0x00, (1<<(BLOCK_SIZE_pos-8)), 0x00, //block_size
 };
+
+uint8_t read_mode = 0;
 
 void scsi_read() {
 	uint32_t block = scsi_cbw.cbw[4]<<8 | scsi_cbw.cbw[5];
@@ -145,27 +146,28 @@ void scsi_read() {
 }
 
 uint16_t* flash_buffer;
+uint32_t block;
+uint32_t bsent = 0;
 
 void scsi_packet_recieved(uint8_t psize) {
-	flash_unlock();
-	FLASH->CR |= FLASH_CR_PG;
-	if(scsi_cbw.cbw[0] != 0x2a) return;
-	for (uint8_t i = 0; i < ((psize+1)>>1); i++) {
-		*(flash_buffer++) = *(((uint16_t*)data)+i);
-		flash_ready_wait();
+	if(!read_mode) return;
+	bsent += psize;
+	if (bsent >= (1 << BLOCK_SIZE_pos)) {
+		USB_OTG_OUTEndpointTypeDef* epout = usbEpout(SCSI_EP);
+		epout->DOEPCTL |= USB_OTG_DOEPCTL_SNAK;
+		flash_write_page(block + BASE_BLOCK_OFFSET, (uint16_t*) data);
+		usb_ep_buf_set(2, (uint32_t*)data);
+		block++;
+		bsent = 0;
+		epout->DOEPCTL |= USB_OTG_DOEPCTL_CNAK;
 	}
-	usb_ep_buf_set(2, (uint32_t*)data);
-	FLASH->CR &= ~FLASH_CR_PG;
-	flash_lock();
 }
 
 void scsi_write() {
-	uint32_t block = scsi_cbw.cbw[4]<<8 | scsi_cbw.cbw[5];
+	block = scsi_cbw.cbw[4]<<8 | scsi_cbw.cbw[5];
 	uint16_t numblocks = scsi_cbw.cbw[7]<<8 | scsi_cbw.cbw[8];
-	for(uint16_t i = 0; i<numblocks; i++)
-		flash_erase(block+i+BASE_BLOCK_OFFSET);
-
-	flash_buffer = flash + (block<<(BLOCK_SIZE_pos - 1));
+	read_mode = 1;
+	bsent = 0;
 	usb_ep_buf_set(2, (uint32_t*)data);
 	/* usb_ep_buf_set(2, (uint32_t *)(data + (block<<BLOCK_SIZE_pos))); */
 	usb_set_out_ep(2, scsi_cbw.data_transfer_length, scsi_cbw.data_transfer_length>>6);
@@ -203,10 +205,15 @@ void parse_scsi_command() {
 	case 0x2a:
 		scsi_write();
 		break;
+	default:
+		usbZLP(2);
+		scsi_status = in;
+		break;
 	}
 }
 
 void reply_bulk_scsi() {
+	read_mode = 0;
 	usbWrite(SCSI_EP, (uint32_t*)&scsi_csw, 13);
 	usb_ep_buf_set(2, (uint32_t *)&scsi_cbw);
 	usb_set_out_ep(2, 31, 1);

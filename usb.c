@@ -101,25 +101,25 @@ uint32_t** usb_device_descriptor = (uint32_t**)&(pre_usb_device_descriptor);
 full_configuration_descriptor_t pre_configuration_descriptor = {
 	.send_size = CONF_SIZE,
     .usb_configuration_descriptor = {
-            .bLength = 9,
-            .bDescriptorType = USB_DESCRIPTOR_CONFIGURATION,
-            .wTotalLength = CONF_SIZE,
-            .bNumInterfaces = 1,
-            .bConfigurationValue = 1,
-            .iConfiguration = 0, // index of string descriptor
-            .bmAttributes = 0b10000000,
-            .bMaxPower = 50, // in 2mA units
+		.bLength = 9,
+		.bDescriptorType = USB_DESCRIPTOR_CONFIGURATION,
+		.wTotalLength = CONF_SIZE,
+		.bNumInterfaces = 2,
+		.bConfigurationValue = 1,
+		.iConfiguration = 0, // index of string descriptor
+		.bmAttributes = 0b10000000,
+		.bMaxPower = 50, // in 2mA units
 	},
     .usb_interface_hid_descriptor = {
-            .bLength = 9,
-            .bDescriptorType = 0x04,
-            .bInterfaceNumber = 0,
-            .bAlternateSetting = 0,
-            .bNumEndpoints = 1,
-            .bInterfaceClass = USB_HID_CLASS,
-            .bInterfaceSubClass = 0x01,
-            .bInterfaceProtocol = 0x01,
-            .iInterface = 0,
+		.bLength = 9,
+		.bDescriptorType = 0x04,
+		.bInterfaceNumber = 0,
+		.bAlternateSetting = 0,
+		.bNumEndpoints = 1,
+		.bInterfaceClass = USB_HID_CLASS,
+		.bInterfaceSubClass = 0x01,
+		.bInterfaceProtocol = 0x01,
+		.iInterface = 0,
 	},
     .usb_HID_descriptor = {
 		.bLength = 9,
@@ -165,7 +165,6 @@ full_configuration_descriptor_t pre_configuration_descriptor = {
 		.wMaxPacketSize = 64,
 		.bInterval = 0,
 	},
-	
 };
 uint32_t** configuration_descriptor = (uint32_t**)&(pre_configuration_descriptor);
 
@@ -612,8 +611,7 @@ void usb_read_data() {
 		epbuf = usb_ep_buf[endpoint_number];//make sure it is set
 		for (uint16_t i = 0; i < ((byte_count + 3) >> 2); i++, epbuf++)
 			*epbuf = *fifo;
-
-		/* usb_ep_buf[endpoint_number] = epbuf; */
+		usb_ep_buf[endpoint_number] = epbuf;
 		if(endpoint_number == 2)
 			scsi_packet_recieved(byte_count);
 		if(endpoint_number == 0)

@@ -102,6 +102,7 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 
 #define USB_BCD_2 0x0200 //USB 2.0
 #define USB_HID_CLASS 0x03
+#define USB_AUDIO 0x01
 #define USB_MASS_STORAGE 0x08
 #define USB_CDC_ACM_SUBCLASS 0x00
 #define USB_NO_SPECIFIC_PROTOCOL 0x00 //

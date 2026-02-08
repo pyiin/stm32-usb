@@ -79,7 +79,7 @@ void EXTI15_10_IRQHandler() {
 	EXTI->PR = 0b1011<<12;
 }
 
-uint8_t test[] = "aaaa bbbb#";
+uint8_t test[] = "test test#";
 int main(void)
 {
 	__enable_irq();
@@ -123,7 +123,7 @@ int main(void)
 	
 	//	wait_clk(7200000,5);
 	while (1) {
-		//		write_string_packed((uint8_t*)test, sizeof(test));
+		/* write_string_packed((uint8_t*)test, sizeof(test)); */
 		wait_clk(7200000, 1);
 		//		light(buffer[0] & 0xff);
 	}

@@ -96,10 +96,10 @@ int main(void)
 	/* 	|  SCB_SHCSR_USGFAULTENA_Msk; */
 
 
-	GPIOD->CRL = 0x00000200;
-	GPIOC->CRH = 0x00022200;
-	GPIOB->CRL = 0x00222000;
-	GPIOA->CRH = 0x20000000;
+	GPIOD->CRL = 0x00000300;
+	GPIOC->CRH = 0x00033300;
+	GPIOB->CRL = 0x00333000;
+	GPIOA->CRH = 0x30000000;
 	GPIOB->ODR = 0;
 	GPIOA->ODR = 0;
 	GPIOD->ODR = 0;
@@ -118,8 +118,8 @@ int main(void)
 	EXTI->RTSR |= 0b1011<<12; //rising
 	AFIO->EXTICR[3] |= 0x1011; //pb select
 
-	NVIC_EnableIRQ(EXTI15_10_IRQn);
-	NVIC_SetPriority(EXTI15_10_IRQn,1);
+	/* NVIC_EnableIRQ(EXTI15_10_IRQn); */
+	/* NVIC_SetPriority(EXTI15_10_IRQn,2); */
 	
 	//	wait_clk(7200000,5);
 	while (1) {

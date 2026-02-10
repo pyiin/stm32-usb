@@ -142,6 +142,6 @@ uint8_t write_report(void*);
 void usb_ep_buf_set(uint8_t ep, uint32_t *buf);
 void read_ep_fifo(uint32_t*, uint8_t, uint32_t);
 void usbWrite(uint8_t ep, void* data, uint32_t len);
-void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint8_t packet_size);
-void ep_out_enable(uint8_t epn, uint8_t eptype, uint8_t packet_size);
+void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint16_t packet_size);
+void ep_out_enable(uint8_t epn, uint8_t eptype, uint16_t packet_size);
 void usb_set_out_ep(uint8_t epnum, uint32_t size, uint8_t pcktcnt);

@@ -89,6 +89,7 @@ int main(void)
 	AFIO->MAPR |= (0x2 << 24);//debugging ports remap
 
 	NVIC_EnableIRQ(SysTick_IRQn);
+	NVIC_SetPriority(SysTick_IRQn,2);
 
 	/* SCnSCB->ACTLR |= SCnSCB_ACTLR_DISDEFWBUF_Msk; */
 	/* SCB->SHCSR |= SCB_SHCSR_BUSFAULTENA_Msk */

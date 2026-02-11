@@ -492,7 +492,7 @@ void usb_core_init() {
 	USB_OTG_FS->GINTSTS = 0xffffffff; //zero all interrupts
 
 	//set up interrupts
-	NVIC_SetPriority(OTG_FS_IRQn, 0);
+	NVIC_SetPriority(OTG_FS_IRQn, 1);
     NVIC_EnableIRQ(OTG_FS_IRQn);
 }
 

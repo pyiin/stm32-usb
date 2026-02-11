@@ -4,7 +4,7 @@
 void stream_packet_recieved(uint32_t);
 void audio_init();
 
-#define AUDIO_PCKTSIZ (uint16_t)48*8+10
+#define AUDIO_PCKTSIZ (uint16_t)48*4*2
 
 typedef struct __attribute__((packed)) usb_audio_class_header_t {
 	uint8_t bLength;

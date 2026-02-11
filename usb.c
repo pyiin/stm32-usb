@@ -13,9 +13,9 @@ uint32_t buf[AUDIO_PCKTSIZ*2];
 
 uint8_t l = 0;
 
-#define RX_FIFO_DEPTH_IN_WORDS 200
+#define RX_FIFO_DEPTH_IN_WORDS 256
 #define TX0_FIFO_DEPTH_IN_WORDS 64
-#define TX1_FIFO_DEPTH_IN_WORDS 16
+#define TX1_FIFO_DEPTH_IN_WORDS 0
 #define TX2_FIFO_DEPTH_IN_WORDS 0
 
 enum  {
@@ -212,7 +212,7 @@ full_configuration_descriptor_t pre_configuration_descriptor = {
 		.bLength = 7,
 		.bDescriptorType = 0x05,
 		.bEndpointAddress = 0x01,
-		.bmAttributes = 0b00000101, // isynchronous?
+		.bmAttributes = 0b00000001, // isynchronous?
 		.wMaxPacketSize = AUDIO_PCKTSIZ,
 		.bInterval = 1,
 	},
@@ -439,6 +439,15 @@ void set_ep0_zlphost() {
 	ep0_state = zlp_host;
 }
 
+void usb_set_out_ep_iso(uint8_t epnum, uint32_t size, uint8_t pcktcnt, uint8_t parity) {
+	USB_OTG_OUTEndpointTypeDef* ep = usbEpout(epnum);
+	if(parity)
+		ep->DOEPCTL |= USB_OTG_DOEPCTL_SODDFRM;
+	else
+		ep->DOEPCTL |= USB_OTG_DOEPCTL_SD0PID_SEVNFRM;
+	usb_set_out_ep(epnum, size, pcktcnt);
+}
+
 void usb_set_out_ep(uint8_t epnum, uint32_t size, uint8_t pcktcnt) {
 	USB_OTG_OUTEndpointTypeDef* ep = usbEpout(epnum);
 	ep->DOEPTSIZ = (pcktcnt << USB_OTG_DOEPTSIZ_PKTCNT_Pos) |
@@ -461,6 +470,7 @@ void clock_setup(){
 	/* RCC->BDCR |= RCC_BDCR_RTCEN; */
 	
 	//setup prediv12 and prediv1scr
+	RCC->CFGR2 |= RCC_CFGR2_PREDIV1_DIV2;
 	RCC->CFGR |= (0b0111<<RCC_CFGR_PLLMULL_Pos);
 	RCC->CFGR |= (0b0<<RCC_CFGR_OTGFSPRE_Pos);
 	RCC->CFGR |= RCC_CFGR_PLLSRC;
@@ -488,7 +498,7 @@ void usb_core_init() {
 	USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD; //force device mode
 	wait_clk(72000,25);
 
-    USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_USBRST |  USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT;//USB_OTG_GINTMSK_MMISM | USB_OTG_GINTMSK_OTGINT | // un-mask global interrupt and mode mismatch interrupt
+    USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_USBRST |  USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT | USB_OTG_GINTMSK_SOFM;//USB_OTG_GINTMSK_MMISM | USB_OTG_GINTMSK_OTGINT | // un-mask global interrupt and mode mismatch interrupt
 	USB_OTG_FS->GINTSTS = 0xffffffff; //zero all interrupts
 
 	//set up interrupts
@@ -675,10 +685,11 @@ void usb_read_data() {
 	case 0b0010: // out packet recieved
 		if(byte_count == 0) break;
 		fifo = usbEpFifo(endpoint_number);
+
 		epbuf = usb_ep_buf[endpoint_number];//make sure it is set
 		for (uint16_t i = 0; i < ((byte_count + 3) >> 2); i++, epbuf++)
 			*epbuf = *fifo;
-		usb_ep_buf[endpoint_number] = epbuf;
+		/* usb_ep_buf[endpoint_number] = epbuf; */
 		if(endpoint_number == 2)
 			scsi_packet_recieved(byte_count);
 		if(endpoint_number == 1)
@@ -777,5 +788,10 @@ void OTG_FS_IRQHandler() {
     }
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_IEPINT) {
         usb_interrupt_in_handler();
+    }
+	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_SOF) {
+		USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_SOF;
+		static uint8_t i=0;
+		light(++i);
     }
 }

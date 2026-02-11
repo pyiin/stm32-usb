@@ -145,3 +145,4 @@ void usbWrite(uint8_t ep, void* data, uint32_t len);
 void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint16_t packet_size);
 void ep_out_enable(uint8_t epn, uint8_t eptype, uint16_t packet_size);
 void usb_set_out_ep(uint8_t epnum, uint32_t size, uint8_t pcktcnt);
+void usb_set_out_ep_iso(uint8_t epnum, uint32_t size, uint8_t pcktcnt, uint8_t parity);

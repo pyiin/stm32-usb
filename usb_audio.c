@@ -3,7 +3,7 @@
 #include "misc.h"
 
 uint8_t abuffer[AUDIO_PCKTSIZ*2];
-uint32_t dataid;
+uint8_t parity;
 
 void dma_setup(){
 	NVIC_SetPriority(DMA1_Channel5_IRQn, 0);
@@ -26,10 +26,14 @@ void dma_setup(){
 
 void stream_packet_recieved(uint32_t bcnt) {
 	static uint8_t i=0;
-	usb_ep_buf_set(1, (uint32_t*)abuffer);
-	light(++i);
-	usb_set_out_ep(AUDIO_EP, AUDIO_PCKTSIZ, 1);
-	dataid = 0;
+	usb_set_out_ep_iso(AUDIO_EP, AUDIO_PCKTSIZ, 1, parity);
+	parity = !parity;
+	/* light(++i); */
+
+	/* if(half == 1) */
+	/* 	light(0xf0); */
+	/* else */
+	/* 	light(0x0f); */
 }
 
 void i2s2_gpio() {
@@ -51,13 +55,14 @@ void i2s2_gpio() {
 void audio_init() {
 	//use pll3
 	usb_ep_buf_set(1, (uint32_t*)abuffer);
+	i2s2_gpio();
 	// x9 /1 and /51 here. Gives 44.1176k
 	RCC->APB2ENR |= RCC_APB2ENR_IOPCEN | RCC_APB2ENR_IOPBEN;
 	RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
 
-	RCC->CFGR2 |= RCC_CFGR2_PLL3MUL9;
+	RCC->CFGR2 |= RCC_CFGR2_PLL3MUL12;
 	RCC->CFGR2 &= ~RCC_CFGR2_PREDIV2_Msk;
-	RCC->CFGR2 |= RCC_CFGR2_PREDIV2_DIV1;
+	RCC->CFGR2 |= RCC_CFGR2_PREDIV2_DIV5;
 	RCC->CFGR2 |= RCC_CFGR2_I2S2SRC;
 	RCC->CR |= RCC_CR_PLL3ON;
 	while(!(RCC->CR & RCC_CR_PLL3RDY));
@@ -72,7 +77,7 @@ void audio_init() {
 	/* NVIC_SetPriority(SPI2_IRQn, 1); */
 	/* NVIC_EnableIRQ(SPI2_IRQn); */
 	
-	SPI2->I2SPR = 25 | (SPI_I2SPR_ODD);// | SPI_I2SPR_MCKOE;
+	SPI2->I2SPR = 12 | (SPI_I2SPR_ODD);// | SPI_I2SPR_MCKOE;
 
 	SPI2->I2SCFGR |= SPI_I2SCFGR_I2SE; //enable
 
@@ -81,19 +86,15 @@ void audio_init() {
 	DMA1_Channel5->CCR |= DMA_CCR_EN;
 }
 
-void SPI2_IRQHandler() {
-		SPI2->DR = abuffer[dataid++];
-		if(dataid >= AUDIO_PCKTSIZ)
-			dataid = 0;
-}
-
 
 void DMA1_Channel5_IRQHandler() { //not equal packet sizes.
-	if (DMA1->ISR & DMA_ISR_GIF5)
-		usb_ep_buf_set(1, (uint32_t*)abuffer);
-	if (DMA1->ISR & DMA_ISR_TCIF5)
-		usb_ep_buf_set(1, (uint32_t*)(abuffer + AUDIO_PCKTSIZ));
+	if (DMA1->ISR & DMA_ISR_TCIF5) {
+		usb_ep_buf_set(1, (uint32_t *)(abuffer + AUDIO_PCKTSIZ));
+	} else if (DMA1->ISR & DMA_ISR_HTIF5) {
+		usb_ep_buf_set(1, (uint32_t *)abuffer);
+	}
 
-	DMA1->IFCR |= DMA_IFCR_CGIF5
-		| DMA_IFCR_CTCIF5;
+	/* if(DMA1->ISR &  DMA_ISR_HTIF5 & DMA_ISR_TCIF5) */
+	/* 	light(0xa1); */
+	DMA1->IFCR = 0xffffffff;
 }

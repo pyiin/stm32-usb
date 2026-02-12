@@ -3,6 +3,7 @@
 
 void stream_packet_recieved(uint32_t);
 void audio_init();
+void audio_check_sync();
 
 #define AUDIO_PCKTSIZ (uint16_t)48*4*2
 

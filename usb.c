@@ -791,7 +791,6 @@ void OTG_FS_IRQHandler() {
     }
 	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_SOF) {
 		USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_SOF;
-		static uint8_t i=0;
-		light(++i);
+		audio_check_sync();
     }
 }

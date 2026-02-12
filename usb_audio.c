@@ -2,26 +2,53 @@
 #include "usb.h"
 #include "misc.h"
 
-uint8_t abuffer[AUDIO_PCKTSIZ*2];
+#define MIN_GAP 64
+#define MAX_GAP 128
+
+uint8_t abuffer[AUDIO_PCKTSIZ*2+8];
 uint8_t parity;
+uint8_t half;
+int8_t dma_offset = 0;
+
+void audio_check_sync() {
+	uint32_t usb_pos = half ? AUDIO_PCKTSIZ : 0;
+	uint32_t dma_pos = 2*AUDIO_PCKTSIZ - (DMA1_Channel5->CNDTR << 1);
+	if(dma_pos > usb_pos) usb_pos += 2*AUDIO_PCKTSIZ;
+	if (usb_pos - dma_pos < MIN_GAP) {
+		dma_offset = 1;
+		light(0x01);
+	}
+	else if (usb_pos - dma_pos > MAX_GAP) {
+		dma_offset = -1;
+		light(0x02);
+	}
+	else
+		light(0x00);
+	// stop dma and restart one step closer
+}
+
+void dma_en(int8_t offset) {
+	DMA1_Channel5->CCR = 0;
+	DMA1_Channel5->CCR = (0b11 <<DMA_CCR_PL_Pos)
+		| (0x01 << DMA_CCR_MSIZE_Pos)
+		| (0x01 << DMA_CCR_PSIZE_Pos)
+		| DMA_CCR_MINC
+		/* | DMA_CCR_CIRC */
+		| DMA_CCR_DIR
+		| DMA_CCR_HTIE
+		| DMA_CCR_TCIE;
+	DMA1_Channel5->CMAR = (uint32_t)abuffer;
+	DMA1_Channel5->CNDTR = AUDIO_PCKTSIZ + (offset*4);
+	DMA1_Channel5->CPAR = (uint32_t)(&SPI2->DR);
+	DMA1_Channel5->CCR |= DMA_CCR_EN;
+}
 
 void dma_setup(){
 	NVIC_SetPriority(DMA1_Channel5_IRQn, 0);
 	NVIC_EnableIRQ(DMA1_Channel5_IRQn);
 
 	RCC->AHBENR |= RCC_AHBENR_DMA1EN;
-	DMA1_Channel5->CCR = 0;
-	DMA1_Channel5->CCR = (0b11 <<DMA_CCR_PL_Pos)
-		| (0x01 << DMA_CCR_MSIZE_Pos)
-		| (0x01 << DMA_CCR_PSIZE_Pos)
-		| DMA_CCR_MINC
-		| DMA_CCR_CIRC
-		| DMA_CCR_DIR
-		| DMA_CCR_HTIE
-		| DMA_CCR_TCIE;
-	DMA1_Channel5->CMAR = (uint32_t)abuffer;
-	DMA1_Channel5->CNDTR = AUDIO_PCKTSIZ;
-	DMA1_Channel5->CPAR = (uint32_t)(&SPI2->DR);
+	dma_en(0);
 }
 
 void stream_packet_recieved(uint32_t bcnt) {
@@ -72,29 +99,40 @@ void audio_init() {
 		| (0b00 << SPI_I2SCFGR_I2SSTD_Pos)// pcm
 		| (0b10 << SPI_I2SCFGR_DATLEN_Pos) // 32 bit
 		| SPI_I2SCFGR_CHLEN;
-	SPI2->CR2 |= SPI_CR2_TXDMAEN; //dma enable
-	/* SPI2->CR2 |= SPI_CR2_TXEIE; */
-	/* NVIC_SetPriority(SPI2_IRQn, 1); */
-	/* NVIC_EnableIRQ(SPI2_IRQn); */
+
+	SPI2->CR2 |= SPI_CR2_ERRIE;
+	
+	NVIC_SetPriority(SPI2_IRQn, 0);
+	NVIC_EnableIRQ(SPI2_IRQn);
 	
 	SPI2->I2SPR = 12 | (SPI_I2SPR_ODD);// | SPI_I2SPR_MCKOE;
 
-	SPI2->I2SCFGR |= SPI_I2SCFGR_I2SE; //enable
-
-	//dma
 	dma_setup();
-	DMA1_Channel5->CCR |= DMA_CCR_EN;
+	SPI2->CR2 |= SPI_CR2_TXDMAEN; //dma enable
+	SPI2->I2SCFGR |= SPI_I2SCFGR_I2SE; //enable
+	/* while(!(SPI2->I2SCFGR & SPI_I2SCFGR_I2SE)); */
 }
 
+void SPI2_IRQHandler() {
+	SPI2->SR |= SPI_SR_CRCERR;
+	light(0xf0);
+	//restart spi and dma.
+	SPI2->I2SCFGR &= ~SPI_I2SCFGR_I2SE_Msk; //enable
+	dma_setup();
+	SPI2->I2SCFGR |= SPI_I2SCFGR_I2SE; //enable
+}
 
 void DMA1_Channel5_IRQHandler() { //not equal packet sizes.
 	if (DMA1->ISR & DMA_ISR_TCIF5) {
 		usb_ep_buf_set(1, (uint32_t *)(abuffer + AUDIO_PCKTSIZ));
+		half = 1;
+		dma_en(dma_offset);
+		dma_offset = 0;
 	} else if (DMA1->ISR & DMA_ISR_HTIF5) {
 		usb_ep_buf_set(1, (uint32_t *)abuffer);
+		half = 0;
 	}
-
 	/* if(DMA1->ISR &  DMA_ISR_HTIF5 & DMA_ISR_TCIF5) */
 	/* 	light(0xa1); */
-	DMA1->IFCR = 0xffffffff;
+	DMA1->IFCR = DMA_IFCR_CGIF5;
 }

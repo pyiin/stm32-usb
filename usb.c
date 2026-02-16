@@ -13,10 +13,10 @@ uint32_t buf[AUDIO_PCKTSIZ*2];
 
 uint8_t l = 0;
 
-#define RX_FIFO_DEPTH_IN_WORDS 256
-#define TX0_FIFO_DEPTH_IN_WORDS 64
-#define TX1_FIFO_DEPTH_IN_WORDS 0
-#define TX2_FIFO_DEPTH_IN_WORDS 0
+#define RX_FIFO_DEPTH_IN_WORDS 206
+#define TX0_FIFO_DEPTH_IN_WORDS 32
+#define TX1_FIFO_DEPTH_IN_WORDS 16
+#define TX2_FIFO_DEPTH_IN_WORDS 32
 
 enum  {
 	idle,
@@ -621,10 +621,15 @@ void setup_host_to_device() {
     }
 	else if(setup.bRequest == BREQUEST_SET_INTERFACE) {
 		set_ep0_zlpdev();
-		if (setup.wValue == 1) {
-			audio_init();
-			ep_out_enable(1, EP_isyncronous, AUDIO_PCKTSIZ);
-			usb_set_out_ep(1, AUDIO_PCKTSIZ, 1);
+		if(setup.wIndex == 1){
+			if (setup.wValue == 1) {
+				audio_init();
+				ep_out_enable(1, EP_isyncronous, AUDIO_PCKTSIZ);
+				usb_set_out_ep(1, AUDIO_PCKTSIZ, 1);
+			}
+			else {
+				audio_deinit();
+			}
 		}
 	}
 }

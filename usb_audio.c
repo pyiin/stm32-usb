@@ -2,11 +2,11 @@
 #include "usb.h"
 #include "misc.h"
 
-#define MIN_GAP 64
-#define MAX_GAP 128
+#define MIN_GAP 128
+#define MAX_GAP 256
 
 uint8_t abuffer[AUDIO_PCKTSIZ*2+8];
-uint8_t parity;
+
 uint8_t half;
 int8_t dma_offset = 0;
 
@@ -16,14 +16,15 @@ void audio_check_sync() {
 	if(dma_pos > usb_pos) usb_pos += 2*AUDIO_PCKTSIZ;
 	if (usb_pos - dma_pos < MIN_GAP) {
 		dma_offset = 1;
-		light(0x01);
+		light(0xff);
 	}
 	else if (usb_pos - dma_pos > MAX_GAP) {
 		dma_offset = -1;
-		light(0x02);
+		light(0xff);
 	}
-	else
-		light(0x00);
+	else {
+		/* light(0x00); */
+	}
 	// stop dma and restart one step closer
 }
 
@@ -53,10 +54,15 @@ void dma_setup(){
 
 void stream_packet_recieved(uint32_t bcnt) {
 	static uint8_t i=0;
+	static uint8_t parity;
 	usb_set_out_ep_iso(AUDIO_EP, AUDIO_PCKTSIZ, 1, parity);
 	parity = !parity;
-	/* light(++i); */
-
+	int32_t v = *(int32_t*)abuffer;
+	v = (v<0)?-v:v;
+	if (i++ == 50) {
+		light(v >> 21);
+		i=0;
+	}
 	/* if(half == 1) */
 	/* 	light(0xf0); */
 	/* else */
@@ -77,6 +83,11 @@ void i2s2_gpio() {
 		(GPIO_CRH_MODE13_1 | GPIO_CRH_CNF13_1) |  // CK
 		(GPIO_CRH_MODE15_1 | GPIO_CRH_CNF15_1);   // SD
 
+}
+
+uint8_t deinitflag = 0;
+void audio_deinit() {
+	deinitflag = 1;
 }
 
 void audio_init() {
@@ -124,6 +135,12 @@ void SPI2_IRQHandler() {
 
 void DMA1_Channel5_IRQHandler() { //not equal packet sizes.
 	if (DMA1->ISR & DMA_ISR_TCIF5) {
+		if (deinitflag == 1) {
+			SPI2->I2SCFGR &= ~SPI_I2SCFGR_I2SE;
+			DMA1_Channel5->CCR &= ~DMA_CCR_EN;
+			deinitflag = 0;
+			return;
+		}
 		usb_ep_buf_set(1, (uint32_t *)(abuffer + AUDIO_PCKTSIZ));
 		half = 1;
 		dma_en(dma_offset);

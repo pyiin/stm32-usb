@@ -16,11 +16,11 @@ void audio_check_sync() {
 	if(dma_pos > usb_pos) usb_pos += 2*AUDIO_PCKTSIZ;
 	if (usb_pos - dma_pos < MIN_GAP) {
 		dma_offset = 1;
-		light(0xff);
+		/* light(0xff); */
 	}
 	else if (usb_pos - dma_pos > MAX_GAP) {
 		dma_offset = -1;
-		light(0xff);
+		/* light(0xff); */
 	}
 	else {
 		/* light(0x00); */
@@ -60,7 +60,7 @@ void stream_packet_recieved(uint32_t bcnt) {
 	int32_t v = *(int32_t*)abuffer;
 	v = (v<0)?-v:v;
 	if (i++ == 50) {
-		light(v >> 21);
+		/* light(v >> 21); */
 		i=0;
 	}
 	/* if(half == 1) */

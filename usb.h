@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "stm32f1xx.h"
 #include "usb_audio.h"
+#include "usb_hid.h"
 
 #define USB_OTG_FS_DEV    ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
 #define USB_OTG_FS_DEV_ENDPOINT0_OUT     ((USB_OTG_OUTEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_OUT_ENDPOINT_BASE))
@@ -96,6 +97,9 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 	format_type_ACD_t format_type;
 	endpoint_descriptor_t usb_endpoint1_descriptor;
 	isynchronous_endpoint_ACD_t endpoint_ACD;
+	interface_descriptor_t usb_interface_hid_descriptor;
+	HID_descriptor_t usb_HID_descriptor;
+	endpoint_descriptor_t usb_endpoint2_descriptor;
 } full_configuration_descriptor_t;
 
 
@@ -138,7 +142,6 @@ void usb_stall(uint8_t ep);
 void clock_setup();
 void usb_core_init();
 void usb_device_init();
-uint8_t write_report(void*);
 void usb_ep_buf_set(uint8_t ep, uint32_t *buf);
 void read_ep_fifo(uint32_t*, uint8_t, uint32_t);
 void usbWrite(uint8_t ep, void* data, uint32_t len);

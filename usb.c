@@ -8,8 +8,9 @@ setup_packet_t setup = {0};
 uint8_t address_pending = 0;
 uint16_t address;
 
-
 uint32_t buf[AUDIO_PCKTSIZ*2];
+
+extern uint8_t hiddis;
 
 uint8_t l = 0;
 
@@ -34,9 +35,9 @@ uint32_t lun_number = 0;
 
 // ======================= descriptors =======================
 // every report needs to have uint32 size value in the beginning that is skipped when sending
-#define HID_REPORT_SIZE 78
-uint8_t pre_hid_report[] = {
-	HID_REPORT_SIZE, 0x00, 0x00, 0x00,
+#define HID_REPORT_SIZE1 78
+uint8_t pre_hid_report1[] = {
+	HID_REPORT_SIZE1, 0x00, 0x00, 0x00,
 	0x05, 0x01, //usage page
 	0x09, 0x06, //generic keyboard
 	0xa1, 0x01, //collection
@@ -77,8 +78,25 @@ uint8_t pre_hid_report[] = {
 	0x91, 0x02,
 	0xc0
 };
-uint32_t** hid_report = (uint32_t**)&(pre_hid_report);
 
+#define HID_REPORT_SIZE2 45
+#define HID_REPORT_SIZE HID_REPORT_SIZE2
+
+uint8_t pre_hid_report2[] = {
+	HID_REPORT_SIZE2, 0x00, 0x00, 0x00,
+	0x5, 0x1, 0x9, 0x6, 0xa1, 0x1, /* 0x85, 0x6, */
+	0x5, 0x7, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x0,
+	0x25, 0x1, 0x95, 0x8, 0x75, 0x1, 0x81, 0x2,
+	0x75, 0x08,
+	0x95, 0x01,
+	0x81, 0x01,
+	0x5, 0x7,
+	0x19, 0x04, 0x29, 0xa3, 0x15, 0x0,
+	0x25, 0x1,  0x75, 0x1,0x95, 0xa0, 0x81, 0x2,
+	0xc0,
+};
+
+uint32_t **hid_report = (uint32_t **)&(pre_hid_report2);
 
 device_descriptor_t pre_usb_device_descriptor = {
 	.send_size = 18,
@@ -89,7 +107,7 @@ device_descriptor_t pre_usb_device_descriptor = {
     .bDeviceSubClass = 0x00,
     .bDeviceProtocol = 0x00,
     .bMaxPacketSize0 = 64,
-    .idVendor = 0xdead,//0x413c,//0x0483,
+    .idVendor = 0xdeaf,//0x413c,//0x0483,
     .idProduct = 0xbeef,//0x2010,//0x5740,
     .bcdDevice = 0x0100,
     .iManufacturer = 1,
@@ -99,7 +117,7 @@ device_descriptor_t pre_usb_device_descriptor = {
 };
 uint32_t** usb_device_descriptor = (uint32_t**)&(pre_usb_device_descriptor);
 
-#define CONF_SIZE 9+9+9+9+9+9+7+11+7+12+7
+#define CONF_SIZE 9+9+9+9+9+9+7+11+7+12+7  +9+9+7
 
 full_configuration_descriptor_t pre_configuration_descriptor = {
     .send_size = CONF_SIZE,
@@ -108,7 +126,7 @@ full_configuration_descriptor_t pre_configuration_descriptor = {
 		.bLength = 9,
 		.bDescriptorType = USB_DESCRIPTOR_CONFIGURATION,
 		.wTotalLength = CONF_SIZE,
-		.bNumInterfaces = 2,
+		.bNumInterfaces = 3,
 		.bConfigurationValue = 1,
 		.iConfiguration = 0, // index of string descriptor
 		.bmAttributes = 0b10000000,
@@ -223,7 +241,35 @@ full_configuration_descriptor_t pre_configuration_descriptor = {
 		.bmAttributes = 0b00000000,
 		.bLockDelayUnits = 0x00,
 		.wLockDelay = 0,
-    }
+    },
+	.usb_interface_hid_descriptor = {
+		.bLength = 9,
+		.bDescriptorType = 0x04,
+		.bInterfaceNumber = 2,
+		.bAlternateSetting = 0,
+		.bNumEndpoints = 1,
+		.bInterfaceClass = USB_HID_CLASS,
+		.bInterfaceSubClass = 0x00,
+		.bInterfaceProtocol = 0x00,
+		.iInterface = 0,
+	},
+    .usb_HID_descriptor = {
+		.bLength = 9,
+		.bDescriptorType = 0x21,
+		.bcdHid = 0x0111,
+		.bCountryCode = 0x00,
+		.bNumDescriptors = 0x01,
+		.bHidDescriptorType = 0x22,
+		.wDescriptorLength = HID_REPORT_SIZE,
+	},
+	.usb_endpoint2_descriptor = {
+		.bLength = 7,
+		.bDescriptorType = 0x05,
+		.bEndpointAddress = 0x82,
+		.bmAttributes = 0b00000011,
+		.wMaxPacketSize = HID_PCKTSIZ,
+		.bInterval = 1,
+	},
 };
 uint32_t** configuration_descriptor = (uint32_t**)&(pre_configuration_descriptor);
 
@@ -499,6 +545,7 @@ void usb_core_init() {
 	wait_clk(72000,25);
 
     USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_USBRST |  USB_OTG_GINTMSK_OEPINT | USB_OTG_GINTMSK_IEPINT | USB_OTG_GINTMSK_SOFM;//USB_OTG_GINTMSK_MMISM | USB_OTG_GINTMSK_OTGINT | // un-mask global interrupt and mode mismatch interrupt
+
 	USB_OTG_FS->GINTSTS = 0xffffffff; //zero all interrupts
 
 	//set up interrupts
@@ -511,11 +558,13 @@ void usb_core_init() {
 void usb_device_init() {
     USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_DSPD_0 | USB_OTG_DCFG_DSPD_1; // set device speed to full-speed
     USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_NZLSOHSK; // send a STALL packet on non-zero-length status OUT transaction (default USB behavior)
+	USB_OTG_FS_DEV->DCFG |= (0b10 << USB_OTG_DCFG_PFIVL_Pos); //90%
 
-    USB_OTG_FS->GINTMSK |=  USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM | USB_OTG_GINTMSK_GINAKEFFM; // unmask interrupts
+    USB_OTG_FS->GINTMSK |=  USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM | USB_OTG_GINTMSK_GINAKEFFM | USB_OTG_GINTMSK_EOPFM; // unmask interrupts
     USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_VBUSBSEN; // enable V_BUS sensing "B"
 
 	set_ep0_idle();
+
 }
 
 
@@ -543,6 +592,7 @@ void usb_reset_handler() {
 	while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_TXFFLSH);
 
 	USB_OTG_FS_DEV->DCTL |= USB_OTG_DCTL_CGONAK | USB_OTG_DCTL_CGINAK;
+	hiddis = 0;
 }
 
 void usb_enum_done_handler() {
@@ -557,17 +607,6 @@ void usb_enum_done_handler() {
         while(1);
     }
 	set_ep0_idle();
-}
-
-uint8_t can_write = 0;
-
-uint8_t write_report(void* buf){
-	if (can_write) {
-		can_write = 0;
-		usbWrite(1, buf, AUDIO_PCKTSIZ);
-		return 1;
-	}
-	return 0;
 }
 
 typedef struct descriptor_t {
@@ -615,9 +654,9 @@ void setup_host_to_device() {
     }
 	else if(setup.bRequest == BREQUEST_SET_CONFIGURATION) {
 		set_ep0_zlpdev();
+		ep_in_enable(HID_EPID, HID_EPID, EP_interrupt , HID_PCKTSIZ);
+		hiddis = 0;
 		/* init_scsi(); */
-
-		can_write = 1;
     }
 	else if(setup.bRequest == BREQUEST_SET_INTERFACE) {
 		set_ep0_zlpdev();
@@ -644,8 +683,9 @@ void usb_handle_setup_packet() {
     }
 	
     if (setup.bmRequestType & 0x20) { // <----------------------- handle 0x21 control transfer
-		if (setup.bRequest == 0x09)
+		if (setup.bRequest == 0x09) {
 			ready_for_datain = 1;
+		}
 		if (setup.bRequest == BREQUEST_SET_IDLE) {
 			usb_stall(0);
 			set_ep0_idle();
@@ -695,13 +735,13 @@ void usb_read_data() {
 		for (uint16_t i = 0; i < ((byte_count + 3) >> 2); i++, epbuf++)
 			*epbuf = *fifo;
 		/* usb_ep_buf[endpoint_number] = epbuf; */
-		if(endpoint_number == 2)
+		if(endpoint_number == 3)
 			scsi_packet_recieved(byte_count);
 		if(endpoint_number == 1)
 			stream_packet_recieved(byte_count);
 		break;
 	case 0b0011: //out transfer complete
-		if (endpoint_number == 2)
+		if (endpoint_number == 3)
 			scsi_packet_in();
 		if (endpoint_number == 0 && ep0_state == data_out)
 			set_ep0_zlpdev();   // STATUS stage
@@ -758,16 +798,14 @@ void usb_interrupt_in_handler() {
 	}
 	if (USB_OTG_FS_DEV->DAINT & 0x02) {
 		USB_OTG_INEndpointTypeDef* ep = usbEpin(1);
-		if (ep->DIEPINT & USB_OTG_DIEPINT_XFRC) {
+		if (ep->DIEPINT & USB_OTG_DIEPINT_XFRC)
 			ep->DIEPINT = USB_OTG_DIEPINT_XFRC;
-			can_write = 1;
-		}
 	}
 	if (USB_OTG_FS_DEV->DAINT & 0x04) {
 		USB_OTG_INEndpointTypeDef* ep = usbEpin(2);
 		if (ep->DIEPINT & USB_OTG_DIEPINT_XFRC)
 			ep->DIEPINT = USB_OTG_DIEPINT_XFRC;
-		scsi_packet_sent();
+		/* scsi_packet_sent(); */
 	}
 }
 
@@ -797,5 +835,9 @@ void OTG_FS_IRQHandler() {
 	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_SOF) {
 		USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_SOF;
 		audio_check_sync();
+    }
+	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_EOPF) {
+		USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_EOPF;
+		/* usb_hid_send_report(); */
     }
 }

@@ -43,6 +43,22 @@ extern uint32_t led_state;
 extern uint8_t kbd_report[32];
 extern uint8_t kbd_change;
 
+void timeout_setup() {
+	RCC->APB1ENR |= RCC_APB1ENR_TIM5EN;
+
+	TIM5->CR1 = TIM_CR1_OPM;
+	TIM5->PSC = 30000;//change
+	TIM5->ARR = 1;//change
+
+
+	TIM5->DIER |= TIM_DIER_UIE;
+	TIM5->EGR = TIM_EGR_UG;
+	
+	NVIC_EnableIRQ(TIM5_IRQn);
+	NVIC_SetPriority(TIM5_IRQn,0);
+}
+
+
 void ps2_enable(){
 	EXTI->IMR |= EXTI_IMR_MR10; //channel 10
 
@@ -60,6 +76,7 @@ void ps2_enable(){
 	
 	NVIC_EnableIRQ(EXTI15_10_IRQn);
 	NVIC_SetPriority(EXTI15_10_IRQn,0);
+	timeout_setup();
 }
 
 enum {
@@ -133,8 +150,25 @@ void ps2_byte_rcvd() {
 	usb_hid_send_report();
 }
 
+
+inline void start_timer(){
+	TIM5->CR1 |= TIM_CR1_CEN;
+}
+
+inline void stop_timer(){
+	TIM5->CR1 &= ~TIM_CR1_CEN;
+}
+
+void TIM5_IRQHandler() {
+	/* if (TIM5->SR & TIM_SR_UIF) */
+	TIM5->SR &= ~TIM_SR_UIF;
+	ps2_state = START;
+	led_state |= 0x100;
+}
+
 void EXTI15_10_IRQHandler() { //add timeout to switch to start;
 	EXTI->PR |= EXTI_PR_PR10;
+	stop_timer();
 	uint8_t b = ((uint32_t)GPIOA->IDR & GPIO_IDR_IDR15) >> GPIO_IDR_IDR15_Pos; //state of data line
 	/* led_state++; */
 	switch (ps2_state) {
@@ -154,4 +188,5 @@ void EXTI15_10_IRQHandler() { //add timeout to switch to start;
 		ps2_byte_rcvd();
 		break;
 	}
+	start_timer();
 }

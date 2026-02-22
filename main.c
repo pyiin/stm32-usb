@@ -3,6 +3,7 @@
 #include "usb.h"
 #include "misc.h"
 #include "ps2.h"
+#include "spi_sd.h"
 
 uint8_t keys[8] = {
 	0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -12,57 +13,7 @@ uint8_t empty[8] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
-void write_string(uint8_t* buf, uint32_t len){
-	uint32_t idx = 0;
-	while(idx < len){
-		keys[2] = buf[idx] - 'a' + 4;
-		if(keys[2] > 0x27) keys[2] = 0x00;
-		if(buf[idx] == ' ') keys[2] = 0x2c;
-		if(buf[idx] == '#') keys[2] = 0x28;
-
-		/* while(!write_report(&keys)); */
-		/* while(!write_report(&empty)); */
-		idx++;
-	}
-	keys[2] = 0x28;
-	/* while(!write_report(&keys)); */
-	/* while(!write_report(&empty)); */
-}
-
-void write_string_packed(uint8_t* buf, uint32_t len){
-	uint32_t idx = 0;
-	while(idx < len){
-		for (uint8_t i = 2; i < 8; i++) keys[i] = 0;
-		for (uint8_t i = 2; i < 8 & idx < len; i++,idx++) {
-			for(uint8_t j=1; j<=i-2; j++)
-				if(buf[idx] == buf[idx-j])
-					goto write;
-            keys[i] = buf[idx] - 'a' + 4;
-            if (keys[i] > 0x27)
-				keys[i] = 0x00;
-            if (buf[idx] == ' ')
-				keys[i] = 0x2c;
-            if (buf[idx] == '#')
-				keys[i] = 0x28;
-		}
-	write:
-		/* while(!write_report(&keys)); */
-		/* while(!write_report(&empty)); */
-	}
-	keys[2] = 0x28;
-	/* while(!write_report(&keys)); */
-	/* while(!write_report(&empty)); */
-}
-
 uint32_t buffer[10];
-
-void lightdebug(uint32_t t) {
-	for (int i = 0; i < 4; i++, t = (t >> 8)) {
-		light(t & 0xff);
-		wait_clk(720000, 10);
-	}
-	light(0x00);
-}
 
 void tim6_setup(){
 	RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
@@ -79,7 +30,7 @@ void tim6_setup(){
 	TIM6->CR1 |= TIM_CR1_CEN;
 }
 
-uint32_t led_state=0b1;
+uint32_t led_state=0b0;
 void TIM6_IRQHandler(){
 	/* static uint32_t num = 0; */
 	/* if(num==2000){ */
@@ -131,7 +82,7 @@ int main(void)
 	/* 	|  SCB_SHCSR_USGFAULTENA_Msk; */
 
 	led_setup();
-	/* light(0); */
+	light(0);
 	clock_setup();
 	usb_core_init();
 	usb_device_init();
@@ -139,6 +90,9 @@ int main(void)
 	tim6_setup();
 
 	ps2_enable();
+	/* spi1_init(); */
+	/* spi_sd_init(); */
+	
 	//33,34,36,37
 	//pb12,13,15  pc6
 	/* GPIOB->CRH = 0x80880000; //i2s ports remapped to input pull down; */

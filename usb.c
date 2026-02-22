@@ -395,7 +395,7 @@ uint8_t ll = 0;
 void usbZLP(uint8_t ep) {
 	USB_OTG_INEndpointTypeDef* endpoint = usbEpin(ep);
 	endpoint->DIEPTSIZ = (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos);
-    endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;	
+    endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
 }
 
 void usbWrite(uint8_t ep, void* data, uint32_t len) {
@@ -411,7 +411,7 @@ void usbWrite(uint8_t ep, void* data, uint32_t len) {
 	uint32_t pcktcnt = ((len+63)>>6);
 	endpoint->DIEPTSIZ = (pcktcnt << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
 	uint32_t epsiz = endpoint->DIEPTSIZ;
-    endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;	
+    endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
     usbRawWrite(fifo, data, len);
 }
 
@@ -514,7 +514,7 @@ void clock_setup(){
 	/* while(!(RCC->CR & RCC_BDCR_LSEON)) light(0xab); */
 	/* RCC->BDCR |= (1 <<RCC_BDCR_RTCSEL_Pos); */
 	/* RCC->BDCR |= RCC_BDCR_RTCEN; */
-	
+
 	//setup prediv12 and prediv1scr
 	RCC->CFGR2 |= RCC_CFGR2_PREDIV1_DIV2;
 	RCC->CFGR |= (0b0111<<RCC_CFGR_PLLMULL_Pos);
@@ -539,7 +539,7 @@ void usb_core_init() {
     USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_PWRDWN; // enable USB transceiver
     USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;// | USB_OTG_GAHBCFG_PTXFELVL | USB_OTG_GAHBCFG_TXFELVL; //fifos completely empty
 
-    USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_TOCAL_0 | USB_OTG_GUSBCFG_TOCAL_1 | USB_OTG_GUSBCFG_TOCAL_2; // add clock cycles inter-packet timeout 
+    USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_TOCAL_0 | USB_OTG_GUSBCFG_TOCAL_1 | USB_OTG_GUSBCFG_TOCAL_2; // add clock cycles inter-packet timeout
     USB_OTG_FS->GUSBCFG |= (0x6 << USB_OTG_GUSBCFG_TRDT_Pos); //turnaround time
 	USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD; //force device mode
 	wait_clk(72000,25);
@@ -570,14 +570,14 @@ void usb_device_init() {
 
 void usb_reset_handler() {
     USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPCTL |= USB_OTG_DOEPCTL_SNAK  ; // set the NAK bit for end-point 0
-	 
+
     // interrupt un-masking
 	USB_OTG_FS_DEV->DAINTMSK |= 0x10001;
     USB_OTG_FS_DEV->DOEPMSK |= USB_OTG_DOEPMSK_STUPM | USB_OTG_DOEPMSK_XFRCM | USB_OTG_DOEPMSK_OTEPSPRM;
     USB_OTG_FS_DEV->DIEPMSK |= USB_OTG_DIEPMSK_XFRCM;// | USB_OTG_DIEPMSK_ITTXFEMSK;// | USB_OTG_DIEPINT_TXFE;// | (1<<3);
 
     USB_OTG_FS->GRXFSIZ = RX_FIFO_DEPTH_IN_WORDS;
-	
+
     USB_OTG_FS->DIEPTXF0_HNPTXFSIZ = (TX0_FIFO_DEPTH_IN_WORDS << USB_OTG_TX0FD_Pos) | RX_FIFO_DEPTH_IN_WORDS;
 	USB_OTG_FS->DIEPTXF[0] = ((TX1_FIFO_DEPTH_IN_WORDS) << USB_OTG_TX0FD_Pos)
 		| (TX0_FIFO_DEPTH_IN_WORDS+RX_FIFO_DEPTH_IN_WORDS);
@@ -681,7 +681,7 @@ void usb_handle_setup_packet() {
     for (uint16_t idx = 0; idx < 2; idx++, buffer++) {
         *buffer = *USB_OTG_FS_ENDPOINT0_FIFO;
     }
-	
+
     if (setup.bmRequestType & 0x20) { // <----------------------- handle 0x21 control transfer
 		if (setup.bRequest == 0x09) {
 			ready_for_datain = 1;

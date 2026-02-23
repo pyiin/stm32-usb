@@ -43,6 +43,10 @@ extern uint32_t led_state;
 extern uint8_t kbd_report[32];
 extern uint8_t kbd_change;
 
+void recieve_handler();
+void send_handler();
+void (*ps2_byte_handler)(void) = recieve_handler;
+
 void timeout_setup() {
 	RCC->APB1ENR |= RCC_APB1ENR_TIM5EN;
 
@@ -59,35 +63,53 @@ void timeout_setup() {
 }
 
 
+enum {
+	START,
+	DATA,
+	PARITY,
+	STOP,
+	ACK,
+} ps2_state = START;
+uint8_t ps2dat = 0;
+uint8_t datcnt = 0;
+
 void ps2_enable(){
 	EXTI->IMR |= EXTI_IMR_MR10; //channel 10
 
+	ps2_state = START;
 	AFIO->EXTICR[2] &= ~AFIO_EXTICR3_EXTI10_Msk;
 	AFIO->EXTICR[2] |= AFIO_EXTICR3_EXTI10_PC;
 	EXTI->RTSR &= ~EXTI_RTSR_RT10;
 	EXTI->FTSR |= EXTI_FTSR_FT10; //read ps2 byte on falling edge
 
 	//pc10 input
-	GPIOC->CRH &= ~GPIO_CRH_MODE10_Msk;
+	GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk);
 	GPIOC->CRH |= (0b01<<GPIO_CRH_CNF10_Pos);
 	//pa15 input
 	GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk);
 	GPIOA->CRH |= (0b01<<GPIO_CRH_CNF15_Pos);
-	
+
 	NVIC_EnableIRQ(EXTI15_10_IRQn);
 	NVIC_SetPriority(EXTI15_10_IRQn,0);
 	timeout_setup();
+	
+#ifdef PS2MOUSE
+	ps2dat = 0xe4;
+	send_byte();
+#endif
 }
 
-enum {
-	START,
-	DATA,
-	PARITY,
-	STOP,
-} ps2_state = START;
-uint8_t ps2dat = 0;
-uint8_t datcnt = 0;
-
+void ps2_mouse_byte() { //send F4 to enable mouse
+	static enum {
+		BUTTON,
+		XMVMT,
+		YMVMT,
+		CMD,
+	} status = BUTTON;
+	led_state &= ~0xff;
+	led_state |= ps2dat;
+	led_state = (led_state + 0x100) & 0xffff;
+}
 
 void ps2_byte_rcvd() {
 	led_state = ps2dat;
@@ -159,16 +181,84 @@ inline void stop_timer(){
 	TIM5->CR1 &= ~TIM_CR1_CEN;
 }
 
+uint8_t timeout_send = 0;
 void TIM5_IRQHandler() {
 	/* if (TIM5->SR & TIM_SR_UIF) */
 	TIM5->SR &= ~TIM_SR_UIF;
 	ps2_state = START;
 	led_state |= 0x100;
+	if(timeout_send)
+		send_handler();
+	else {
+		EXTI->RTSR &= ~EXTI_RTSR_RT10;
+		EXTI->FTSR |= EXTI_FTSR_FT10; // read ps2 byte on falling edge
+
+		// pc10 input
+		GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk);
+		GPIOC->CRH |= (0b01 << GPIO_CRH_CNF10_Pos);
+		// pa15 input
+		GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk);
+		GPIOA->CRH |= (0b01 << GPIO_CRH_CNF15_Pos);
+	}
 }
 
-void EXTI15_10_IRQHandler() { //add timeout to switch to start;
-	EXTI->PR |= EXTI_PR_PR10;
-	stop_timer();
+void send_byte() {
+	//pc10 out
+	GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk);
+	GPIOC->CRH |= (0b01<<GPIO_CRH_CNF10_Pos) | (0b10 << GPIO_CRH_MODE10_Pos);
+	GPIOC->ODR |= GPIO_ODR_ODR15;
+	//pa15 out
+	GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk);
+	GPIOA->CRH |= (0b01<<GPIO_CRH_CNF15_Pos) | (0b10 << GPIO_CRH_MODE10_Pos);
+	GPIOA->ODR &= ~(GPIO_ODR_ODR15);
+
+	EXTI->FTSR &= ~EXTI_FTSR_FT10;
+	EXTI->RTSR |= EXTI_RTSR_RT10;
+	timeout_send = 1;
+	start_timer();
+	ps2_byte_handler = send_handler;
+}
+
+void send_handler() {
+	timeout_send = 0;
+	uint8_t b = ((uint32_t)GPIOA->IDR & GPIO_IDR_IDR15) >> GPIO_IDR_IDR15_Pos; //state of data line
+	static uint32_t parity = 0;
+	switch (ps2_state) {
+	case START:
+		datcnt = 0;
+		parity = 0;
+		GPIOA->ODR &= ~GPIO_ODR_ODR15; // send 0
+		GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk); //clk in, and release clock
+		GPIOC->CRH |= (0b01<<GPIO_CRH_CNF10_Pos);
+		ps2_state = DATA;
+		break;
+	case DATA:
+		parity ^= (ps2dat >> 7);
+		GPIOA->ODR &= ~GPIO_ODR_ODR15;
+		GPIOA->ODR |= ((ps2dat >> 7) << GPIO_IDR_IDR15_Pos);
+		if(++datcnt == 8) ps2_state = PARITY;
+		ps2dat <<= 1;
+		break;
+	case PARITY:
+		ps2_state = STOP;
+		GPIOA->ODR &= ~GPIO_ODR_ODR15;
+		GPIOA->ODR |= (parity << GPIO_IDR_IDR15_Pos);
+		break;
+	case STOP:
+		ps2_state = ACK;
+		GPIOA->ODR &= ~GPIO_ODR_ODR15;
+		break;
+	case ACK:
+		ps2_state = START;
+		GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk);
+		GPIOA->CRH |= (0b01<<GPIO_CRH_CNF15_Pos);
+		EXTI->RTSR &= ~EXTI_RTSR_RT10;
+		EXTI->FTSR |= EXTI_FTSR_FT10;
+		ps2_byte_handler = recieve_handler;
+	}
+}
+
+void recieve_handler() {
 	uint8_t b = ((uint32_t)GPIOA->IDR & GPIO_IDR_IDR15) >> GPIO_IDR_IDR15_Pos; //state of data line
 	/* led_state++; */
 	switch (ps2_state) {
@@ -185,8 +275,21 @@ void EXTI15_10_IRQHandler() { //add timeout to switch to start;
 		break;
 	case STOP:
 		ps2_state = START;
+#ifdef PS2MOUSE
+		ps2_mouse_byte();
+#else
 		ps2_byte_rcvd();
+#endif
+		break;
+	case ACK:
+		ps2_state = START;
 		break;
 	}
+}
+
+void EXTI15_10_IRQHandler() { //add timeout to switch to start;
+	EXTI->PR |= EXTI_PR_PR10;
+	stop_timer();
+	ps2_byte_handler();
 	start_timer();
 }

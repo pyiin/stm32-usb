@@ -37,6 +37,35 @@ void light_off() {
   GPIOC->ODR &= ~C_ODR_Msk;
   GPIOD->ODR &= ~D_ODR_Msk;
 }
+//<WIP>
+void light_impedance() {
+  GPIOB->ODR |= B_ODR_Msk;
+  GPIOC->ODR |= C_ODR_Msk;
+  GPIOD->ODR |= D_ODR_Msk;
+}
+
+
+void light_id_3state(uint8_t id) {
+	//all outputs on, all outputs high impedance
+	light_impedance();
+	uint8_t id_small = id & 0x0f;
+	uint8_t dir = (id>>4) & 0x01;
+	uint16_t num_msk = (1<<id_small);
+	uint16_t gpiobodr = 0;
+	uint16_t gpiocodr = 0;
+	uint16_t gpiododr = 0;
+	if (B_num_Msk & num_msk) {
+		GPIOB->ODR &= ~(dir << positions[id_small]);
+	}
+	if (C_num_Msk & num_msk) {
+		GPIOC->ODR &= ~(dir << positions[id_small]);
+	}
+	if (D_num_Msk & num_msk) {
+		GPIOD->ODR &= ~(dir << positions[id_small]);
+	}
+	dir=!dir;
+}
+//<\WIP>
 
 void light_id(uint8_t id) {
 	light_off();

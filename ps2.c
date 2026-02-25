@@ -106,9 +106,9 @@ void ps2_mouse_byte() { //send F4 to enable mouse
 		YMVMT,
 		CMD,
 	} status = BUTTON;
-	led_state &= ~0xff;
-	led_state |= ps2dat;
-	led_state = (led_state + 0x100) & 0xffff;
+	/* led_state &= ~0xff; */
+	/* led_state |= ps2dat; */
+	/* led_state = (led_state + 0x100) & 0xffff; */
 }
 
 void ps2_byte_rcvd() {
@@ -133,6 +133,7 @@ void ps2_byte_rcvd() {
 	case 0xfe:
 	case 0x00:
 	case 0xff:
+		led_state = 0xf1;
 		byte_mode = NORM;
 		return;
 	default:
@@ -184,22 +185,22 @@ inline void stop_timer(){
 uint8_t timeout_send = 0;
 void TIM5_IRQHandler() {
 	/* if (TIM5->SR & TIM_SR_UIF) */
-	TIM5->SR &= ~TIM_SR_UIF;
 	ps2_state = START;
 	led_state |= 0x100;
 	if(timeout_send)
 		send_handler();
 	else {
-		EXTI->RTSR &= ~EXTI_RTSR_RT10;
-		EXTI->FTSR |= EXTI_FTSR_FT10; // read ps2 byte on falling edge
+		/* EXTI->RTSR &= ~EXTI_RTSR_RT10; */
+		/* EXTI->FTSR |= EXTI_FTSR_FT10; // read ps2 byte on falling edge */
 
-		// pc10 input
-		GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk);
-		GPIOC->CRH |= (0b01 << GPIO_CRH_CNF10_Pos);
-		// pa15 input
-		GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk);
-		GPIOA->CRH |= (0b01 << GPIO_CRH_CNF15_Pos);
+		/* // pc10 input */
+		/* GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk); */
+		/* GPIOC->CRH |= (0b01 << GPIO_CRH_CNF10_Pos); */
+		/* // pa15 input */
+		/* GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk); */
+		/* GPIOA->CRH |= (0b01 << GPIO_CRH_CNF15_Pos); */
 	}
+	TIM5->SR &= ~TIM_SR_UIF;
 }
 
 void send_byte() {
@@ -209,7 +210,7 @@ void send_byte() {
 	GPIOC->ODR |= GPIO_ODR_ODR15;
 	//pa15 out
 	GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk);
-	GPIOA->CRH |= (0b01<<GPIO_CRH_CNF15_Pos) | (0b10 << GPIO_CRH_MODE10_Pos);
+	GPIOA->CRH |= (0b01<<GPIO_CRH_CNF15_Pos) | (0b10 << GPIO_CRH_MODE15_Pos);
 	GPIOA->ODR &= ~(GPIO_ODR_ODR15);
 
 	EXTI->FTSR &= ~EXTI_FTSR_FT10;
@@ -221,7 +222,6 @@ void send_byte() {
 
 void send_handler() {
 	timeout_send = 0;
-	uint8_t b = ((uint32_t)GPIOA->IDR & GPIO_IDR_IDR15) >> GPIO_IDR_IDR15_Pos; //state of data line
 	static uint32_t parity = 0;
 	switch (ps2_state) {
 	case START:
@@ -260,7 +260,6 @@ void send_handler() {
 
 void recieve_handler() {
 	uint8_t b = ((uint32_t)GPIOA->IDR & GPIO_IDR_IDR15) >> GPIO_IDR_IDR15_Pos; //state of data line
-	/* led_state++; */
 	switch (ps2_state) {
 	case START:
 		ps2_state = DATA;
@@ -290,6 +289,6 @@ void recieve_handler() {
 void EXTI15_10_IRQHandler() { //add timeout to switch to start;
 	EXTI->PR |= EXTI_PR_PR10;
 	stop_timer();
-	ps2_byte_handler();
+	recieve_handler();
 	start_timer();
 }

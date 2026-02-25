@@ -121,7 +121,7 @@ uint8_t spi_sd_init() {
 	GPIOA->ODR |= 1<<4;
 	for(uint32_t i = 0; i<10000000; i++) __NOP();
 	for (int i = 0; i < 10; i++) {
-		SPI1->DR = 0xaa;
+		SPI1->DR = 0xff;
 		while(!(SPI1->SR & SPI_SR_TXE));
 	}
 	while((SPI1->SR & SPI_SR_BSY));
@@ -137,18 +137,15 @@ uint8_t spi_sd_init() {
 	for (uint8_t i = 0; i < 6; i++) {
 		while (!(SPI1->SR & SPI_SR_TXE));
 		SPI1->DR = command[i];
-		while (!(SPI1->SR & SPI_SR_RXNE));
-		ans = SPI1->DR;
-		led_state |= ans;
 	}
-	/* SPI1->CR1 |= SPI_CR1_CRCNEXT; */
 	while((SPI1->SR & SPI_SR_BSY));
 	for (uint8_t i = 0; i < 8; i++) {
 		while (!(SPI1->SR & SPI_SR_TXE));
 		SPI1->DR = 0xff;
 		while (!(SPI1->SR & SPI_SR_RXNE));
 		ans = SPI1->DR;
-		led_state |= ans;
+		led_state = ans;
+		if(ans != 0xff) break;
 	}
 	/* transaction_finished = spi_sd_init2; */
 	/* sd_recieve_command(spibuffer,1); */

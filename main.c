@@ -82,7 +82,6 @@ int main(void)
 	/* 	|  SCB_SHCSR_USGFAULTENA_Msk; */
 
 	led_setup();
-	/* light(0); */
 	clock_setup();
 	usb_core_init();
 	usb_device_init();

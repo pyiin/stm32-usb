@@ -410,16 +410,8 @@ void usbWrite(uint8_t ep, void* data, uint32_t len) {
     }
 	uint32_t pcktcnt = ((len+63)>>6);
 	endpoint->DIEPTSIZ = (pcktcnt << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
-	uint32_t epsiz = endpoint->DIEPTSIZ;
     endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
     usbRawWrite(fifo, data, len);
-}
-
-void read_ep_fifo(uint32_t* b, uint8_t ep, uint32_t len) {
-	volatile uint32_t* fifo = usbEpFifo(ep);
-
-	for (uint8_t idx = 0; idx < len; idx++, b++)
-        *b = *fifo;
 }
 
 uint32_t* usb_ep_buf[4];
@@ -558,9 +550,8 @@ void usb_core_init() {
 void usb_device_init() {
     USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_DSPD_0 | USB_OTG_DCFG_DSPD_1; // set device speed to full-speed
     USB_OTG_FS_DEV->DCFG |= USB_OTG_DCFG_NZLSOHSK; // send a STALL packet on non-zero-length status OUT transaction (default USB behavior)
-	USB_OTG_FS_DEV->DCFG |= (0b10 << USB_OTG_DCFG_PFIVL_Pos); //90%
 
-    USB_OTG_FS->GINTMSK |=  USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM | USB_OTG_GINTMSK_GINAKEFFM | USB_OTG_GINTMSK_EOPFM; // unmask interrupts
+    USB_OTG_FS->GINTMSK |=  USB_OTG_GINTMSK_ENUMDNEM | USB_OTG_GINTMSK_RXFLVLM;// | USB_OTG_GINTMSK_GINAKEFFM;
     USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_VBUSBSEN; // enable V_BUS sensing "B"
 
 	set_ep0_idle();
@@ -573,7 +564,7 @@ void usb_reset_handler() {
 
     // interrupt un-masking
 	USB_OTG_FS_DEV->DAINTMSK |= 0x10001;
-    USB_OTG_FS_DEV->DOEPMSK |= USB_OTG_DOEPMSK_STUPM | USB_OTG_DOEPMSK_XFRCM | USB_OTG_DOEPMSK_OTEPSPRM;
+    USB_OTG_FS_DEV->DOEPMSK |= USB_OTG_DOEPMSK_XFRCM | USB_OTG_DOEPMSK_STUPM;
     USB_OTG_FS_DEV->DIEPMSK |= USB_OTG_DIEPMSK_XFRCM;// | USB_OTG_DIEPMSK_ITTXFEMSK;// | USB_OTG_DIEPINT_TXFE;// | (1<<3);
 
     USB_OTG_FS->GRXFSIZ = RX_FIFO_DEPTH_IN_WORDS;
@@ -592,7 +583,8 @@ void usb_reset_handler() {
 	while (USB_OTG_FS->GRSTCTL & USB_OTG_GRSTCTL_TXFFLSH);
 
 	USB_OTG_FS_DEV->DCTL |= USB_OTG_DCTL_CGONAK | USB_OTG_DCTL_CGINAK;
-	hiddis = 0;
+
+	set_ep0_idle();
 }
 
 void usb_enum_done_handler() {
@@ -602,11 +594,7 @@ void usb_enum_done_handler() {
 		USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPCTL =
 			(USB_OTG_FS_DEV_ENDPOINT0_IN->DIEPCTL & ~USB_OTG_DIEPCTL_MPSIZ_Msk) |
 			(64 << USB_OTG_DIEPCTL_MPSIZ_Pos);
-    } else {
-        // error probably
-        while(1);
-    }
-	set_ep0_idle();
+    } // else soft reset
 }
 
 typedef struct descriptor_t {
@@ -755,18 +743,12 @@ void usb_read_data() {
 void usb_interrupt_out_handler() {
 	uint32_t flags = USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT;
 	if(USB_OTG_FS_DEV->DAINT & (0x01 << 16)){
-		if (flags & USB_OTG_DOEPINT_STUP) {
+		if (flags & USB_OTG_DOEPINT_STUP)
 			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_STUP;
-		}
 		if (flags & USB_OTG_DOEPINT_XFRC) {
 			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = USB_OTG_DOEPINT_XFRC;
 			if(ep0_state == zlp_host)
 				set_ep0_idle();
-		}
-
-		if (flags & (USB_OTG_DOEPINT_OTEPDIS | USB_OTG_DOEPINT_OTEPSPR)) {
-			USB_OTG_FS_DEV_ENDPOINT0_OUT->DOEPINT = flags & (USB_OTG_DOEPINT_OTEPDIS | USB_OTG_DOEPINT_OTEPSPR);
-			//error!
 		}
 		if (address_pending) {
 			USB_OTG_FS_DEV->DCFG &= ~USB_OTG_DCFG_DAD;
@@ -821,9 +803,7 @@ void OTG_FS_IRQHandler() {
     }
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_RXFLVL) {
 		USB_OTG_FS->GINTMSK &= ~USB_OTG_GINTMSK_RXFLVLM;
-		if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_RXFLVL) {
-			usb_read_data();
-		}
+		usb_read_data();
 		USB_OTG_FS->GINTMSK |= USB_OTG_GINTMSK_RXFLVLM;
     }
     if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_OEPINT) {
@@ -835,9 +815,5 @@ void OTG_FS_IRQHandler() {
 	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_SOF) {
 		USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_SOF;
 		audio_check_sync();
-    }
-	if (USB_OTG_FS->GINTSTS & USB_OTG_GINTSTS_EOPF) {
-		USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_EOPF;
-		/* usb_hid_send_report(); */
     }
 }

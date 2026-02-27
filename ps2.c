@@ -1,5 +1,6 @@
 #include "stm32f1xx.h"
 #include "usb_hid.h"
+#include "spi_sd.h"
 /* PC10 interrupt */
 uint8_t escps2[] = {
     // ps2 codes e0 xx
@@ -112,7 +113,8 @@ void ps2_mouse_byte() { //send F4 to enable mouse
 }
 
 void ps2_byte_rcvd() {
-	led_state = ps2dat;
+	led_state &= 0xffff0000;
+	led_state |= ps2dat;
 	static enum { NORM, CLR, ESC, CLRESC, } byte_mode = NORM;
 	switch (ps2dat) {
 	case 0xf0:
@@ -133,7 +135,6 @@ void ps2_byte_rcvd() {
 	case 0xfe:
 	case 0x00:
 	case 0xff:
-		led_state = 0xf1;
 		byte_mode = NORM;
 		return;
 	default:
@@ -171,6 +172,8 @@ void ps2_byte_rcvd() {
 	}
 	byte_mode = NORM;
 	usb_hid_send_report();
+	if(ps2dat == 0b01111110)
+		spi_sd_init();
 }
 
 

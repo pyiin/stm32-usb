@@ -512,10 +512,13 @@ void clock_setup(){
 	RCC->CFGR |= (0b0111<<RCC_CFGR_PLLMULL_Pos);
 	RCC->CFGR |= (0b0<<RCC_CFGR_OTGFSPRE_Pos);
 	RCC->CFGR |= RCC_CFGR_PLLSRC;
+	/* RCC->CFGR |= RCC_CFGR_HPRE_DIV2; */
 
 	//enable pll
 	RCC->CR |= RCC_CR_PLLON;
 	while(!(RCC->CR & RCC_CR_PLLRDY));
+
+
 
 	FLASH->ACR = FLASH_ACR_LATENCY_2 | FLASH_ACR_PRFTBE;
 	//switch to pll

@@ -46,7 +46,7 @@ void TIM6_IRQHandler(){
 		light_off();
 	++current_led;
 	if(current_led==13) current_led = 16;
-	if(current_led==26) current_led = 0;
+	if(current_led==31) current_led = 0;
 	/* num++; */
 }
 
@@ -83,14 +83,17 @@ int main(void)
 
 	led_setup();
 	clock_setup();
+
 	usb_core_init();
 	usb_device_init();
 	usb_ep_buf_set(0,buffer);
 	tim6_setup();
 
 	ps2_enable();
-	/* spi1_init(); */
-	/* spi_sd_init(); */
+	spi1_init();
+	spi_sd_init();
+
+
 	
 	//33,34,36,37
 	//pb12,13,15  pc6

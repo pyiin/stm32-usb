@@ -91,9 +91,8 @@ int main(void)
 
 	ps2_enable();
 	spi1_init();
+
 	spi_sd_init();
-
-
 	
 	//33,34,36,37
 	//pb12,13,15  pc6

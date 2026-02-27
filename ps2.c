@@ -170,9 +170,13 @@ void ps2_byte_rcvd() {
 		kbd_report[offset] &= ~msk;
 		break;
 	}
+
+	uint8_t spii = 0;
+	if(ps2dat == 0b01111110 && byte_mode == NORM)
+		spii = 1;
 	byte_mode = NORM;
 	usb_hid_send_report();
-	if(ps2dat == 0b01111110)
+	if(spii)
 		spi_sd_init();
 }
 

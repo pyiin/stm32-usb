@@ -1,6 +1,7 @@
 #include "stm32f1xx.h"
 
 #define SD_COMMAND_Msk 0x3f
+#define SD_COMMAND 0x40
 uint8_t command[6] = {
 	0x40, 0x00, 0x00, 0x00, 0x00, 0x95,
 };
@@ -117,92 +118,156 @@ void sd_send_dmareturn() {
 }
 uint8_t spibuffer[10];
 extern uint32_t led_state;
-void write_cmd_syncronous(){
+
+uint8_t spi_rxtx_sync(uint8_t dat){
+	while (!(SPI1->SR & SPI_SR_TXE));
+	SPI1->DR = dat;
+	while (!(SPI1->SR & SPI_SR_RXNE));
+	return SPI1->DR;
+}
+
+void cmd_syncronous(){
 	GPIOA->ODR &= ~(1<<4);
+	for (uint8_t i = 0; i < 6; i++) {
+		spi_rxtx_sync(command[i]);
+	}
+
+}
+
+uint8_t reply[32];
+
+void r1_syncronous() {
+	uint8_t ans = 0xff;
+	for (uint8_t i = 0; i < 8; i++) {
+		ans = spi_rxtx_sync(0xff);
+		if ((ans & 0x80) == 0) {
+			break;
+		}
+	}
+	reply[0] = ans;
+}
+
+void r7_syncronous() {
+	r1_syncronous();
+	for(uint8_t i = 1; i<5; i++)
+		reply[i] = spi_rxtx_sync(0xff);
+}
+
+
+void read_csd_sync(){
+	command[0] = SD_COMMAND | 9;
+	command[1] = 0;
+	command[2] = 0;
+	command[3] = 0;
+	command[4] = 0;
+	command[5] = 0;
+	cmd_syncronous();
+	r1_syncronous();
+	uint8_t ans;
+	while((ans = spi_rxtx_sync(0xff)) == 0xff);
+	
+	for(uint16_t i=0; i<16+2; i++)
+		reply[i] = spi_rxtx_sync(0xff);
+	__NOP();
 }
 
 void spi_sd_init2();
 uint8_t spi_sd_init() {
 	//100 to 400 khz, change after setup
 	/* SPI1->CR1 |= SPI_CR1_SSI; */
-	led_state ^= 0x08000000;
+ CMD0:
+	led_state &= 0xffff;
 	GPIOA->ODR |= 1<<4;
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 11; i++) {
 		SPI1->DR = 0xff;
 		while(!(SPI1->SR & SPI_SR_TXE));
 	}
 	while((SPI1->SR & SPI_SR_BSY));
 	GPIOA->ODR &= ~(1<<4);
-
+	uint32_t ntimes = 0;
 	/* led_state = (GPIOA->IDR & GPIO_IDR_IDR6); */
 
-	uint8_t ans = 0;
-	for (uint8_t i = 0; i < 6; i++) {
-		while (!(SPI1->SR & SPI_SR_TXE));
-		SPI1->DR = command[i];
-		while (!(SPI1->SR & SPI_SR_RXNE));
-		ans = SPI1->DR;
+	command[0] = SD_COMMAND;
+	command[1] = 0;
+	command[2] = 0;
+	command[3] = 0;
+	command[4] = 0;
+	command[5] = 0x95;
+	cmd_syncronous();
+	r1_syncronous();
+	if (reply[0] == 0x00) {
+		for(uint32_t i=0;i<7200000;i++)__NOP();
+		goto CMD0;
+	}
+	if (reply[0] != 0x01) {
+		led_state |= 0x0f000000;
+		led_state |= reply[0]<<16;
+		return 0;
 	}
 
-	for (uint8_t i = 0; i < 8; i++) {
-		while (!(SPI1->SR & SPI_SR_TXE));
-		SPI1->DR = 0xff;
-		while (!(SPI1->SR & SPI_SR_RXNE));
-		ans = SPI1->DR;
-		led_state &= 0xfc00ffff;
-		led_state |= ((uint32_t)ans)<<16;
-		if ((ans & 0x80) == 0) {
-			led_state |= 0x02000000;
-			break;
-		}
-	}
-	led_state |= 0x02000000;
-	while((SPI1->SR & SPI_SR_BSY));
-	
-	command[0] &= ~SD_COMMAND_Msk;
-	command[0] |= 8;
+	command[0] = SD_COMMAND | 8;
 	command[1] = 0;
 	command[2] = 0;
 	command[3] = 0x01;
 	command[4] = 0xaa;
-	command[5] = 0x86;
-	for (uint8_t i = 0; i < 6; i++) {
-		while (!(SPI1->SR & SPI_SR_TXE));
-		SPI1->DR = command[i];
-		while (!(SPI1->SR & SPI_SR_RXNE));
-		ans = SPI1->DR;
-	}
-	for (uint8_t i = 0; i < 8; i++) {
-		while (!(SPI1->SR & SPI_SR_TXE));
-		SPI1->DR = 0xff;
-		while (!(SPI1->SR & SPI_SR_RXNE));
-		ans = SPI1->DR;
-		led_state &= 0xfc00ffff;
-		led_state |= ((uint32_t)ans)<<16;
-		if ((ans & 0x80) == 0) {
-			led_state |= 0x02000000;
-			break;
-		}
-	}
-	for (uint8_t i = 0; i < 4; i++) {
-		while (!(SPI1->SR & SPI_SR_TXE));
-		SPI1->DR = 0xff;
-		while (!(SPI1->SR & SPI_SR_RXNE));
-		ans = SPI1->DR;
-		led_state &= 0xfc00ffff;
-		led_state |= ((uint32_t)ans)<<16;
-	}
-	/* transaction_finished = spi_sd_init2; */
-	/* sd_recieve_command(spibuffer,1); */
-	/* sd_send_command(command); */
+	command[5] = 0x87;
+	cmd_syncronous();
+	r7_syncronous();
 
-	// 6 byte cmd0 0x40, 0,0,0,0, 0x95
-	// read R1
-	// cmd8 0x48 0x00 0x00 0x01 0xAA 0x87
-	// 5 bytes response
-	// cmd55, acmd41
+	if (!(reply[3] == 0x01 && reply[4] == 0xaa)) {
+		led_state |= 0x08000000;
+		return 0;
+	}
+	led_state |= 0x01000000;
+
+
+ ACMD41:
+	command[0] = SD_COMMAND | 55;
+	command[1] = 0;
+	command[2] = 0;
+	command[3] = 0;
+	command[4] = 0;
+	command[5] = 0;
+
+	cmd_syncronous();
+	r1_syncronous();
+	command[0] = SD_COMMAND | 41;
+	command[1] = 0x40;
+	command[2] = 0;
+	command[3] = 0;
+	command[4] = 0;
+	command[5] = 0;
+	cmd_syncronous();
+	r1_syncronous();
+
+	if (reply[0] != 0x00) {
+		led_state &= ~0x00ff0000;
+		led_state |= (reply[0] << 16);
+		if(ntimes++ < 800)
+			goto ACMD41;
+		return 0;
+	}
+	led_state &= ~0x00ff0000;
+	led_state |= 0x02000000;
+
+	command[0] = SD_COMMAND | 58;
+	command[1] = 0x58;
+	command[2] = 0;
+	command[3] = 0;
+	command[4] = 0;
+	command[5] = 0;
+	cmd_syncronous();
+	r7_syncronous();
+	led_state |= reply[1] << 16;
+
+	if(reply[1] & (1<<7))
+		read_csd_sync();
+	else
+		return 0;
 	return 1;
 }
+
+
 
 uint8_t spi_sd_readsize() {
 	if(!SD_ready) return 0;

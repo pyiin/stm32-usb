@@ -1,5 +1,6 @@
 #include "stm32f1xx.h"
 
+#define BLOCK_SIZE 512
 #define SD_COMMAND_Msk 0x3f
 #define SD_COMMAND 0x40
 uint8_t command[6] = {
@@ -45,6 +46,12 @@ void spi1_gpio() {
 		| (0b10 << GPIO_CRL_CNF7_Pos) | (0b11 << GPIO_CRL_MODE7_Pos)
 		| (0b01 << GPIO_CRL_CNF6_Pos) | (0b00 << GPIO_CRL_MODE6_Pos);
 	GPIOA->BSRR |= GPIO_BSRR_BS4;
+
+	//pc4 debug triggger
+
+	GPIOC->CRL |= ~( GPIO_CRL_MODE4 | GPIO_CRL_CNF4 );
+	GPIOC->CRL |= (0b01 << GPIO_CRL_CNF4_Pos) | (0b00 << GPIO_CRL_MODE4_Pos);
+	GPIOC->BSRR |= GPIO_BSRR_BR4;
 	/* GPIOA->BSRR |= GPIO_BSRR_BR6; */
 }
 
@@ -55,31 +62,34 @@ void spi1_init(){
 	RCC->AHBENR |= RCC_AHBENR_DMA1EN;
 	RCC->CFGR &= ~RCC_CFGR_PPRE1;
 	RCC->CFGR &= ~RCC_CFGR_PPRE2;
-	RCC->CFGR |= RCC_CFGR_PPRE1_DIV2; //4.5MhzSPI
-	RCC->CFGR |= RCC_CFGR_PPRE2_DIV2; //4.5MhzSPI
+	RCC->CFGR |= RCC_CFGR_PPRE1_DIV2; 
+	RCC->CFGR |= RCC_CFGR_PPRE2_DIV2;
 
 	SPI1->CR1 =  SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI;// | SPI_CR1_SSM; SPI_CR1_CRCEN |
 	SPI1->CR1 |= (0b111 << SPI_CR1_BR_Pos); //div by 16, 281K
 
 	/* //sp1 dma */
 	DMA1_Channel3->CPAR = (uint32_t)&SPI1->DR;
-	DMA1_Channel3->CCR = (0b10 << DMA_CCR_PL_Pos)
+	DMA1_Channel3->CCR = (0b01 << DMA_CCR_PL_Pos)
 		| (0b00 << DMA_CCR_MSIZE_Pos)
 		| (0b00 << DMA_CCR_PSIZE_Pos)
 		| DMA_CCR_MINC
-		| (1<<DMA_CCR_DIR) //tx
+		| (DMA_CCR_DIR) //tx
 		| DMA_CCR_TCIE;
 	DMA1_Channel2->CPAR = (uint32_t)&SPI1->DR;
-	DMA1_Channel2->CCR = (0b10 << DMA_CCR_PL_Pos)
+	DMA1_Channel2->CCR = (0b01 << DMA_CCR_PL_Pos)
 		| (0b00 << DMA_CCR_MSIZE_Pos)
 		| (0b00 << DMA_CCR_PSIZE_Pos)
 		| DMA_CCR_MINC
-		| (0<<DMA_CCR_DIR) //rx
+		//		| (DMA_CCR_DIR) //rx
 		| DMA_CCR_TCIE;
 	NVIC_EnableIRQ(DMA1_Channel2_IRQn);
 	NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 	NVIC_SetPriority(DMA1_Channel2_IRQn,2);
 	NVIC_SetPriority(DMA1_Channel3_IRQn,2);
+
+	SPI1->CR2 = SPI_CR2_RXDMAEN
+		| SPI_CR2_TXDMAEN;
 	// CR1 BR & LSBFIRST
 	SPI1->I2SCFGR = 0;       // no i2s
 	SPI1->CR1 |= SPI_CR1_SPE; // spi enable
@@ -183,10 +193,11 @@ void read_csd_sync(){
 
 	for (uint16_t i = 0; i < 16 + 2; i++)
 		*((uint8_t*)(&sd_csd)+i) = spi_rxtx_sync(0xff);
+	led_state &= 0xff00ffff;
+	led_state |= sd_csd.dsize[1]<<16;
 	__NOP();
 }
 
-void spi_sd_init2();
 uint8_t spi_sd_init() {
 	spi_set_ls();
 	//100 to 400 khz, change after setup
@@ -274,12 +285,11 @@ uint8_t spi_sd_init() {
 	command[5] = 0;
 	cmd_syncronous();
 	r7_syncronous();
-	led_state |= reply[1] << 16;
-
-	spi_set_hs();
-	if(reply[1] & (1<<7))
+	if (reply[1] & (1 << 7)) {
+		SD_ready = 1;
+		spi_set_hs();
 		read_csd_sync();
-	else
+	} else
 		return 0;
 	return 1;
 }
@@ -291,8 +301,46 @@ uint8_t spi_sd_readsize() {
 	return 1;
 }
 
-uint8_t spi_sd_readblock(uint32_t blknum) {
+uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 	if(!SD_ready) return 0;
+	command[0] = 0x40 | 17;
+	command[1] = blknum & 0xff000000;
+	command[2] = blknum & 0xff0000;
+	command[3] = blknum & 0xff00;
+	command[4] = blknum & 0xff;
+	command[5] = 0;
+	static uint32_t ff = 0;
+	ff=0xff;
+	DMA1_Channel3->CNDTR = BLOCK_SIZE;
+	DMA1_Channel3->CMAR = (uint32_t)(&ff);
+	DMA1_Channel3->CCR &= ~DMA_CCR_MINC; //not increment
+
+	DMA1_Channel2->CNDTR = BLOCK_SIZE;
+	DMA1_Channel2->CMAR = (uint32_t)blkbuf;
+
+	cmd_syncronous();
+	uint8_t ans = 0;
+	r1_syncronous();
+	__NOP();
+	while ((ans = spi_rxtx_sync(0xff)) == 0xff)
+		;
+
+	dma_rcv_fn = 0;
+
+	GPIOC->BSRR |= GPIO_BSRR_BS4;//trigger scope
+	DMA1_Channel2->CCR |= DMA_CCR_EN;
+
+
+	DMA1_Channel3->CCR |= DMA_CCR_EN;
+
+	/* for (uint32_t i = 0; i < 512; i++) { */
+	/* 	while (!(SPI1->SR & SPI_SR_TXE)); */
+	/* 	SPI1->DR = 0xff; */
+	/* } */
+
+	sd_state = DMA_CMD;
+
+	/* dma_rcv_fn = buffer_ready; */
 	return 1;
 }
 
@@ -303,12 +351,14 @@ uint8_t spi_sd_writeblock(uint32_t blknum, void* blkbuf) {
 
 void DMA1_Channel2_IRQHandler() { //recieve
 	DMA1->IFCR = DMA_IFCR_CGIF2;
-	dma_rcv_fn();
+	if(dma_rcv_fn)
+		dma_rcv_fn();
 }
 
 void DMA1_Channel3_IRQHandler() { //transmit
 	DMA1->IFCR = DMA_IFCR_CGIF3;
-	dma_snd_fn();
+	if(dma_snd_fn)
+		dma_snd_fn();
 }
 
 void SPI1_IRQHandler() {

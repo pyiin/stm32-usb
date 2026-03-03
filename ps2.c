@@ -1,6 +1,8 @@
 #include "stm32f1xx.h"
 #include "usb_hid.h"
 #include "spi_sd.h"
+
+#define PS2MOUSE 1
 /* PC10 interrupt */
 uint8_t escps2[] = {
     // ps2 codes e0 xx
@@ -43,10 +45,49 @@ uint8_t normps2[] = {
 extern uint32_t led_state;
 extern uint8_t kbd_report[32];
 extern uint8_t kbd_change;
+enum {
+	START,
+	DATA,
+	PARITY,
+	STOP,
+	ACK,
+} ps2_state = START;
+uint8_t ps2dat = 0;
+uint8_t datcnt = 0;
+
 
 void recieve_handler();
 void send_handler();
 void (*ps2_byte_handler)(void) = recieve_handler;
+
+inline void start_timer(){
+	TIM5->CR1 |= TIM_CR1_CEN;
+}
+
+inline void stop_timer(){
+	TIM5->CR1 &= ~TIM_CR1_CEN;
+}
+
+uint8_t timeout_send = 0;
+void TIM5_IRQHandler() {
+	/* if (TIM5->SR & TIM_SR_UIF) */
+	ps2_state = START;
+	led_state |= 0x100;
+	if(timeout_send)
+		send_handler();
+	else {
+		/* EXTI->RTSR &= ~EXTI_RTSR_RT10; */
+		/* EXTI->FTSR |= EXTI_FTSR_FT10; // read ps2 byte on falling edge */
+
+		/* // pc10 input */
+		/* GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk); */
+		/* GPIOC->CRH |= (0b01 << GPIO_CRH_CNF10_Pos); */
+		/* // pa15 input */
+		/* GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk); */
+		/* GPIOA->CRH |= (0b01 << GPIO_CRH_CNF15_Pos); */
+	}
+	TIM5->SR &= ~TIM_SR_UIF;
+}
 
 void timeout_setup() {
 	RCC->APB1ENR |= RCC_APB1ENR_TIM5EN;
@@ -64,16 +105,8 @@ void timeout_setup() {
 }
 
 
-enum {
-	START,
-	DATA,
-	PARITY,
-	STOP,
-	ACK,
-} ps2_state = START;
-uint8_t ps2dat = 0;
-uint8_t datcnt = 0;
 
+void send_byte();
 void ps2_enable(){
 	EXTI->IMR |= EXTI_IMR_MR10; //channel 10
 
@@ -100,16 +133,23 @@ void ps2_enable(){
 #endif
 }
 
+uint8_t mouse_data[3];
+
 void ps2_mouse_byte() { //send F4 to enable mouse
+	static uint32_t pos = 0;
 	static enum {
 		BUTTON,
 		XMVMT,
 		YMVMT,
 		CMD,
 	} status = BUTTON;
-	/* led_state &= ~0xff; */
-	/* led_state |= ps2dat; */
-	/* led_state = (led_state + 0x100) & 0xffff; */
+	led_state &= ~0xffff;
+	led_state |= ps2dat;
+	mouse_data[(pos++%3)] |= ps2dat;
+	if(ps2dat != 0)
+		led_state |= 0x0100;
+	if(ps2dat == 0)
+		led_state |= 0x0200;
 }
 
 void ps2_byte_rcvd() {
@@ -176,39 +216,13 @@ void ps2_byte_rcvd() {
 		spii = 1;
 	byte_mode = NORM;
 	usb_hid_send_report();
+	extern uint8_t blkbuf[1024];
 	if(spii)
-		spi_sd_init();
+		spi_sd_readblock(0,blkbuf);
 }
 
 
-inline void start_timer(){
-	TIM5->CR1 |= TIM_CR1_CEN;
-}
 
-inline void stop_timer(){
-	TIM5->CR1 &= ~TIM_CR1_CEN;
-}
-
-uint8_t timeout_send = 0;
-void TIM5_IRQHandler() {
-	/* if (TIM5->SR & TIM_SR_UIF) */
-	ps2_state = START;
-	led_state |= 0x100;
-	if(timeout_send)
-		send_handler();
-	else {
-		/* EXTI->RTSR &= ~EXTI_RTSR_RT10; */
-		/* EXTI->FTSR |= EXTI_FTSR_FT10; // read ps2 byte on falling edge */
-
-		/* // pc10 input */
-		/* GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk); */
-		/* GPIOC->CRH |= (0b01 << GPIO_CRH_CNF10_Pos); */
-		/* // pa15 input */
-		/* GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk); */
-		/* GPIOA->CRH |= (0b01 << GPIO_CRH_CNF15_Pos); */
-	}
-	TIM5->SR &= ~TIM_SR_UIF;
-}
 
 void send_byte() {
 	//pc10 out
@@ -296,6 +310,6 @@ void recieve_handler() {
 void EXTI15_10_IRQHandler() { //add timeout to switch to start;
 	EXTI->PR |= EXTI_PR_PR10;
 	stop_timer();
-	recieve_handler();
+	ps2_byte_handler();
 	start_timer();
 }

@@ -63,6 +63,7 @@ void led_setup(){
 	GPIOD->ODR = 0;
 }
 
+uint8_t blkbuf[1024];
 
 uint8_t test[] = "test test#";
 int main(void)
@@ -93,7 +94,8 @@ int main(void)
 	spi1_init();
 
 	spi_sd_init();
-	
+	spi_sd_readblock(0, blkbuf);
+	__NOP();
 	//33,34,36,37
 	//pb12,13,15  pc6
 	/* GPIOB->CRH = 0x80880000; //i2s ports remapped to input pull down; */

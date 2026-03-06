@@ -4,6 +4,8 @@
 #include "misc.h"
 #include "ps2.h"
 #include "spi_sd.h"
+#include "key_matrix.h"
+
 
 uint8_t keys[8] = {
 	0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -14,6 +16,8 @@ uint8_t empty[8] = {
 };
 
 uint32_t buffer[10];
+
+uint32_t led_state=0b0;
 
 void tim6_setup(){
 	RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
@@ -30,7 +34,7 @@ void tim6_setup(){
 	TIM6->CR1 |= TIM_CR1_CEN;
 }
 
-uint32_t led_state=0b0;
+
 void TIM6_IRQHandler(){
 	/* static uint32_t num = 0; */
 	/* if(num==2000){ */
@@ -65,6 +69,8 @@ void led_setup(){
 
 uint8_t blkbuf[1024];
 
+extern uint8_t key_state[4];
+
 uint8_t test[] = "test test#";
 int main(void)
 {
@@ -82,20 +88,25 @@ int main(void)
 	/* 	|  SCB_SHCSR_MEMFAULTENA_Msk */
 	/* 	|  SCB_SHCSR_USGFAULTENA_Msk; */
 
-	led_setup();
-	clock_setup();
 
+	clock_setup();
+/* #ifdef HW2 */
+/* 	led_setup(); */
+/* 	tim6_setup(); */
+/* #endif */
 	usb_core_init();
 	usb_device_init();
 	usb_ep_buf_set(0,buffer);
-	tim6_setup();
 
-	ps2_enable();
-	spi1_init();
 
-	spi_sd_init();
-	spi_sd_readblock(0, blkbuf);
-	__NOP();
+	/* ps2_enable(); */
+	/* spi1_init(); */
+
+	/* spi_sd_init(); */
+	/* spi_sd_readblock(0, blkbuf); */
+/* #ifdef HW3 */
+	key_setup();
+/* #endif */
 	//33,34,36,37
 	//pb12,13,15  pc6
 	/* GPIOB->CRH = 0x80880000; //i2s ports remapped to input pull down; */
@@ -110,6 +121,8 @@ int main(void)
 	/* CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; */
 	/* DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk; */
 	while (1) {
+		/* read_keys(); */
+		/* key_to_report(); */
 		/* for(int i=0; i<10000;i++) __NOP(); */
 		/* usb_hid_send_report(); */
 		/* t0 = t1; */

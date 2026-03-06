@@ -3,6 +3,7 @@
 #include "usb.h"
 #include "misc.h"
 #include "usb_scsi.h"
+#include "key_matrix.h"
 
 setup_packet_t setup = {0};
 uint8_t address_pending = 0;
@@ -11,6 +12,7 @@ uint16_t address;
 uint32_t buf[AUDIO_PCKTSIZ*2];
 
 extern uint8_t hiddis;
+extern uint8_t kbd_report[32];
 
 uint8_t l = 0;
 
@@ -647,6 +649,7 @@ void setup_host_to_device() {
 		set_ep0_zlpdev();
 		ep_in_enable(HID_EPID, HID_EPID, EP_interrupt , HID_PCKTSIZ);
 		hiddis = 0;
+		usbWrite(HID_EPID, kbd_report, HID_PCKTSIZ);
 		/* init_scsi(); */
     }
 	else if(setup.bRequest == BREQUEST_SET_INTERFACE) {
@@ -790,6 +793,10 @@ void usb_interrupt_in_handler() {
 		USB_OTG_INEndpointTypeDef* ep = usbEpin(2);
 		if (ep->DIEPINT & USB_OTG_DIEPINT_XFRC)
 			ep->DIEPINT = USB_OTG_DIEPINT_XFRC;
+		read_keys();
+		key_to_report();
+		usbWrite(HID_EPID, kbd_report, HID_PCKTSIZ);
+		/* ep_in_enable(2, 2, EP_interrupt, HID_PCKTSIZ); */
 		/* scsi_packet_sent(); */
 	}
 }

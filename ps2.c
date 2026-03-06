@@ -2,7 +2,7 @@
 #include "usb_hid.h"
 #include "spi_sd.h"
 
-#define PS2MOUSE 1
+/* #define PS2MOUSE 1 */
 /* PC10 interrupt */
 uint8_t escps2[] = {
     // ps2 codes e0 xx

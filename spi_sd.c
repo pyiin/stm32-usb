@@ -1,8 +1,20 @@
 #include "stm32f1xx.h"
 
 #define BLOCK_SIZE 512
+#define SPI_SD SPI1
 #define SD_COMMAND_Msk 0x3f
 #define SD_COMMAND 0x40
+
+#ifdef HW2
+#define SD_CS GPIOA->ODR
+#define CS_Msk (1<<4)
+#endif
+#ifdef HW3
+#define SD_CS GPIOD->ODR
+#define CS_Msk (1<<2)
+#endif
+
+
 uint8_t command[6] = {
 	0x40, 0x00, 0x00, 0x00, 0x00, 0x95,
 };
@@ -24,19 +36,25 @@ void (*dma_snd_fn)(void) = emptyfn;
 void (*transaction_finished)(void) = emptyfn;
 
 void spi_set_hs(){
-	while(SPI1->SR & SPI_SR_BSY);
-	SPI1->CR1 &= ~SPI_CR1_BR;
-	SPI1->CR1 |= (0b011 << SPI_CR1_BR_Pos); //div by 256, 281K
+	while(SPI_SD->SR & SPI_SR_BSY);
+	SPI_SD->CR1 &= ~SPI_CR1_BR;
+	SPI_SD->CR1 |= (0b011 << SPI_CR1_BR_Pos); //div by 256, 281K
 }
 void spi_set_ls(){
-	SPI1->CR1 &= ~SPI_CR1_BR;
-	SPI1->CR1 |= (0b111 << SPI_CR1_BR_Pos); //div by 256, 281K
+	SPI_SD->CR1 &= ~SPI_CR1_BR;
+	SPI_SD->CR1 |= (0b111 << SPI_CR1_BR_Pos); //div by 256, 281K
 }
 
 void spi1_gpio() {
 	//pa4,5,6,7
 	//4,5,7 push pull
 	//6, input floating
+	// keyboard ======
+	// miso pb4
+	// mosi pb5
+	// sclk pb3
+	// cs pd4
+#ifdef HW2
 	GPIOA->CRL &= ~( GPIO_CRL_MODE4 | GPIO_CRL_CNF4
 					 | GPIO_CRL_MODE5 | GPIO_CRL_CNF5
 					 | GPIO_CRL_MODE6 | GPIO_CRL_CNF6
@@ -46,13 +64,30 @@ void spi1_gpio() {
 		| (0b10 << GPIO_CRL_CNF7_Pos) | (0b11 << GPIO_CRL_MODE7_Pos)
 		| (0b01 << GPIO_CRL_CNF6_Pos) | (0b00 << GPIO_CRL_MODE6_Pos);
 	GPIOA->BSRR |= GPIO_BSRR_BS4;
+#endif
+#ifdef HW3
+	AFIO->MAPR |= AFIO_MAPR_SPI1_REMAP;
+	GPIOB->CRL &= ~( GPIO_CRL_MODE4 | GPIO_CRL_CNF4
+					 | GPIO_CRL_MODE5 | GPIO_CRL_CNF5
+					 | GPIO_CRL_MODE3 | GPIO_CRL_CNF3);
 
+	GPIOB->CRL |= (0b00 << GPIO_CRL_CNF4_Pos) | (0b11 << GPIO_CRL_MODE4_Pos)
+		| (0b10 << GPIO_CRL_CNF5_Pos) | (0b11 << GPIO_CRL_MODE5_Pos)
+		| (0b10 << GPIO_CRL_CNF3_Pos) | (0b11 << GPIO_CRL_MODE3_Pos);
+
+	GPIOB->BSRR = GPIO_BSRR_BS4;
+
+	GPIOD->CRL &= ~( GPIO_CRL_MODE2 | GPIO_CRL_CNF2);
+	GPIOD->CRL |= (0b01 << GPIO_CRL_CNF2_Pos) | (0b00 << GPIO_CRL_MODE2_Pos);
+	GPIOD->BSRR |= GPIO_BSRR_BR2;
+#endif
+		
 	//pc4 debug triggger
 
 	GPIOC->CRL |= ~( GPIO_CRL_MODE4 | GPIO_CRL_CNF4 );
 	GPIOC->CRL |= (0b01 << GPIO_CRL_CNF4_Pos) | (0b00 << GPIO_CRL_MODE4_Pos);
 	GPIOC->BSRR |= GPIO_BSRR_BR4;
-	/* GPIOA->BSRR |= GPIO_BSRR_BR6; */
+
 }
 
 void spi1_init(){
@@ -65,18 +100,18 @@ void spi1_init(){
 	RCC->CFGR |= RCC_CFGR_PPRE1_DIV2; 
 	RCC->CFGR |= RCC_CFGR_PPRE2_DIV2;
 
-	SPI1->CR1 =  SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI;// | SPI_CR1_SSM; SPI_CR1_CRCEN |
-	SPI1->CR1 |= (0b111 << SPI_CR1_BR_Pos); //div by 16, 281K
+	SPI_SD->CR1 =  SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI;// | SPI_CR1_SSM; SPI_CR1_CRCEN |
+	SPI_SD->CR1 |= (0b111 << SPI_CR1_BR_Pos); //div by 16, 281K
 
 	/* //sp1 dma */
-	DMA1_Channel3->CPAR = (uint32_t)&SPI1->DR;
+	DMA1_Channel3->CPAR = (uint32_t)&SPI_SD->DR;
 	DMA1_Channel3->CCR = (0b01 << DMA_CCR_PL_Pos)
 		| (0b00 << DMA_CCR_MSIZE_Pos)
 		| (0b00 << DMA_CCR_PSIZE_Pos)
 		| DMA_CCR_MINC
 		| (DMA_CCR_DIR) //tx
 		| DMA_CCR_TCIE;
-	DMA1_Channel2->CPAR = (uint32_t)&SPI1->DR;
+	DMA1_Channel2->CPAR = (uint32_t)&SPI_SD->DR;
 	DMA1_Channel2->CCR = (0b01 << DMA_CCR_PL_Pos)
 		| (0b00 << DMA_CCR_MSIZE_Pos)
 		| (0b00 << DMA_CCR_PSIZE_Pos)
@@ -88,11 +123,11 @@ void spi1_init(){
 	NVIC_SetPriority(DMA1_Channel2_IRQn,2);
 	NVIC_SetPriority(DMA1_Channel3_IRQn,2);
 
-	SPI1->CR2 = SPI_CR2_RXDMAEN
+	SPI_SD->CR2 = SPI_CR2_RXDMAEN
 		| SPI_CR2_TXDMAEN;
 	// CR1 BR & LSBFIRST
-	SPI1->I2SCFGR = 0;       // no i2s
-	SPI1->CR1 |= SPI_CR1_SPE; // spi enable
+	SPI_SD->I2SCFGR = 0;       // no i2s
+	SPI_SD->CR1 |= SPI_CR1_SPE; // spi enable
 }
 void sd_rcv_dmareturn();
 uint8_t sd_recieve_command(uint8_t *buf, uint8_t numbytes) {
@@ -101,15 +136,15 @@ uint8_t sd_recieve_command(uint8_t *buf, uint8_t numbytes) {
 	DMA1_Channel3->CMAR = (uint32_t)buf;
 
 	DMA1_Channel3->CCR |= DMA_CCR_EN;
-	SPI1->CR2 |= SPI_CR2_RXDMAEN;
+	SPI_SD->CR2 |= SPI_CR2_RXDMAEN;
 	
 	dma_rcv_fn = sd_rcv_dmareturn;
 	return 1;
 }
 void sd_rcv_dmareturn() {
 	sd_state = CRC_SPI;
-	/* SPI1->CR1 |= SPI_CR1_CRCNEXT; */
-	SPI1->CR2 &= ~SPI_CR2_RXDMAEN;
+	/* SPI_SD->CR1 |= SPI_CR1_CRCNEXT; */
+	SPI_SD->CR2 &= ~SPI_CR2_RXDMAEN;
 	sd_state = IDLE;
 	transaction_finished();
 }
@@ -121,7 +156,7 @@ uint8_t sd_send_command(uint8_t* cmd) {
 	DMA1_Channel3->CMAR = (uint32_t)cmd;
 
 	DMA1_Channel3->CCR |= DMA_CCR_EN;
-	SPI1->CR2 |= SPI_CR2_TXDMAEN;
+	SPI_SD->CR2 |= SPI_CR2_TXDMAEN;
 	sd_state = DMA_CMD;
 	
 	dma_snd_fn = sd_send_dmareturn;
@@ -130,18 +165,18 @@ uint8_t sd_send_command(uint8_t* cmd) {
 
 void sd_send_dmareturn() {
 	sd_state = CRC_SPI;
-	SPI1->CR1 |= SPI_CR1_CRCNEXT;
-	SPI1->CR2 &= ~SPI_CR2_TXDMAEN;
+	SPI_SD->CR1 |= SPI_CR1_CRCNEXT;
+	SPI_SD->CR2 &= ~SPI_CR2_TXDMAEN;
 	sd_state = RESPONSE;
 }
 uint8_t spibuffer[10];
 extern uint32_t led_state;
 
 uint8_t spi_rxtx_sync(uint8_t dat){
-	while (!(SPI1->SR & SPI_SR_TXE));
-	SPI1->DR = dat;
-	while (!(SPI1->SR & SPI_SR_RXNE));
-	return SPI1->DR;
+	while (!(SPI_SD->SR & SPI_SR_TXE));
+	SPI_SD->DR = dat;
+	while (!(SPI_SD->SR & SPI_SR_RXNE));
+	return SPI_SD->DR;
 }
 
 void cmd_syncronous(){
@@ -201,16 +236,16 @@ void read_csd_sync(){
 uint8_t spi_sd_init() {
 	spi_set_ls();
 	//100 to 400 khz, change after setup
-	/* SPI1->CR1 |= SPI_CR1_SSI; */
+	/* SPI_SD->CR1 |= SPI_CR1_SSI; */
  CMD0:
 	led_state &= 0xffff;
-	GPIOA->ODR |= 1<<4;
+	SD_CS |= CS_Msk;
 	for (int i = 0; i < 11; i++) {
-		SPI1->DR = 0xff;
-		while(!(SPI1->SR & SPI_SR_TXE));
+		SPI_SD->DR = 0xff;
+		while(!(SPI_SD->SR & SPI_SR_TXE));
 	}
-	while((SPI1->SR & SPI_SR_BSY));
-	GPIOA->ODR &= ~(1<<4);
+	while((SPI_SD->SR & SPI_SR_BSY));
+	SD_CS &= ~CS_Msk;
 	uint32_t ntimes = 0;
 	/* led_state = (GPIOA->IDR & GPIO_IDR_IDR6); */
 
@@ -322,8 +357,7 @@ uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 	uint8_t ans = 0;
 	r1_syncronous();
 	__NOP();
-	while ((ans = spi_rxtx_sync(0xff)) == 0xff)
-		;
+	while ((ans = spi_rxtx_sync(0xff)) == 0xff);
 
 	dma_rcv_fn = 0;
 
@@ -334,8 +368,8 @@ uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 	DMA1_Channel3->CCR |= DMA_CCR_EN;
 
 	/* for (uint32_t i = 0; i < 512; i++) { */
-	/* 	while (!(SPI1->SR & SPI_SR_TXE)); */
-	/* 	SPI1->DR = 0xff; */
+	/* 	while (!(SPI_SD->SR & SPI_SR_TXE)); */
+	/* 	SPI_SD->DR = 0xff; */
 	/* } */
 
 	sd_state = DMA_CMD;
@@ -359,11 +393,4 @@ void DMA1_Channel3_IRQHandler() { //transmit
 	DMA1->IFCR = DMA_IFCR_CGIF3;
 	if(dma_snd_fn)
 		dma_snd_fn();
-}
-
-void SPI1_IRQHandler() {
-	if (SPI1->SR & SPI_SR_TXE) {
-	}
-	if (SPI1->SR & SPI_SR_RXNE) {
-	}
 }

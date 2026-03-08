@@ -100,6 +100,9 @@ typedef struct __attribute__((packed)) full_configuration_descriptor_t {
 	interface_descriptor_t usb_interface_hid_descriptor;
 	HID_descriptor_t usb_HID_descriptor;
 	endpoint_descriptor_t usb_endpoint2_descriptor;
+	interface_descriptor_t usb_interface_bbb_descriptor;
+	endpoint_descriptor_t usb_endpoint2in_descriptor;
+	endpoint_descriptor_t usb_endpoint2out_descriptor;
 } full_configuration_descriptor_t;
 
 
@@ -146,5 +149,5 @@ void usb_ep_buf_set(uint8_t ep, uint32_t *buf);
 void usbWrite(uint8_t ep, void* data, uint32_t len);
 void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint16_t packet_size);
 void ep_out_enable(uint8_t epn, uint8_t eptype, uint16_t packet_size);
-void usb_set_out_ep(uint8_t epnum, uint32_t size, uint8_t pcktcnt);
+void usb_set_out_ep(uint8_t epnum, uint32_t size, uint16_t pcktcnt);
 void usb_set_out_ep_iso(uint8_t epnum, uint32_t size, uint8_t pcktcnt, uint8_t parity);

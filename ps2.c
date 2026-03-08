@@ -104,25 +104,45 @@ void timeout_setup() {
 	NVIC_SetPriority(TIM5_IRQn,0);
 }
 
-
+#ifdef HW2
+#define DAT_BYTE (((uint32_t)GPIOA->IDR & GPIO_IDR_IDR15) >> GPIO_IDR_IDR15_Pos)
+#endif
+#ifdef HW3
+#define DAT_BYTE (((uint32_t)GPIOC->IDR & GPIO_IDR_IDR10) >> GPIO_IDR_IDR10_Pos)
+#endif
 
 void send_byte();
 void ps2_enable(){
-	EXTI->IMR |= EXTI_IMR_MR10; //channel 10
-
 	ps2_state = START;
+	
+#ifdef HW2
+	EXTI->IMR |= EXTI_IMR_MR10; //channel 10
 	AFIO->EXTICR[2] &= ~AFIO_EXTICR3_EXTI10_Msk;
 	AFIO->EXTICR[2] |= AFIO_EXTICR3_EXTI10_PC;
 	EXTI->RTSR &= ~EXTI_RTSR_RT10;
 	EXTI->FTSR |= EXTI_FTSR_FT10; //read ps2 byte on falling edge
-
+	
 	//pc10 input
 	GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk);
 	GPIOC->CRH |= (0b01<<GPIO_CRH_CNF10_Pos);
 	//pa15 input
 	GPIOA->CRH &= ~(GPIO_CRH_MODE15_Msk | GPIO_CRH_CNF15_Msk);
 	GPIOA->CRH |= (0b01<<GPIO_CRH_CNF15_Pos);
-
+#endif
+#ifdef HW3
+	EXTI->IMR |= EXTI_IMR_MR11; //channel 11
+	AFIO->EXTICR[2] &= ~AFIO_EXTICR3_EXTI11_Msk;
+	AFIO->EXTICR[2] |= AFIO_EXTICR3_EXTI11_PC;
+	EXTI->RTSR &= ~EXTI_RTSR_RT11;
+	EXTI->FTSR |= EXTI_FTSR_FT11; //read ps2 byte on falling edge
+	//pc10 input
+	GPIOC->CRH &= ~(GPIO_CRH_MODE10_Msk | GPIO_CRH_CNF10_Msk);
+	GPIOC->CRH |= (0b01<<GPIO_CRH_CNF10_Pos);
+	//pc11 input
+	GPIOC->CRH &= ~(GPIO_CRH_MODE11_Msk | GPIO_CRH_CNF11_Msk);
+	GPIOC->CRH |= (0b01<<GPIO_CRH_CNF11_Pos);
+#endif
+	
 	NVIC_EnableIRQ(EXTI15_10_IRQn);
 	NVIC_SetPriority(EXTI15_10_IRQn,0);
 	timeout_setup();
@@ -280,7 +300,7 @@ void send_handler() {
 }
 
 void recieve_handler() {
-	uint8_t b = ((uint32_t)GPIOA->IDR & GPIO_IDR_IDR15) >> GPIO_IDR_IDR15_Pos; //state of data line
+	uint8_t b = DAT_BYTE; //state of data line
 	switch (ps2_state) {
 	case START:
 		ps2_state = DATA;

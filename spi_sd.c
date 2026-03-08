@@ -14,6 +14,7 @@
 #define CS_Msk (1<<2)
 #endif
 
+#define MAX_RESET_RETRIES 2
 
 uint8_t command[6] = {
 	0x40, 0x00, 0x00, 0x00, 0x00, 0x95,
@@ -71,14 +72,14 @@ void spi1_gpio() {
 					 | GPIO_CRL_MODE5 | GPIO_CRL_CNF5
 					 | GPIO_CRL_MODE3 | GPIO_CRL_CNF3);
 
-	GPIOB->CRL |= (0b00 << GPIO_CRL_CNF4_Pos) | (0b11 << GPIO_CRL_MODE4_Pos)
+	GPIOB->CRL |= (0b10 << GPIO_CRL_CNF4_Pos) | (0b00 << GPIO_CRL_MODE4_Pos)
 		| (0b10 << GPIO_CRL_CNF5_Pos) | (0b11 << GPIO_CRL_MODE5_Pos)
 		| (0b10 << GPIO_CRL_CNF3_Pos) | (0b11 << GPIO_CRL_MODE3_Pos);
 
 	GPIOB->BSRR = GPIO_BSRR_BS4;
 
 	GPIOD->CRL &= ~( GPIO_CRL_MODE2 | GPIO_CRL_CNF2);
-	GPIOD->CRL |= (0b01 << GPIO_CRL_CNF2_Pos) | (0b00 << GPIO_CRL_MODE2_Pos);
+	GPIOD->CRL |= (0b00 << GPIO_CRL_CNF2_Pos) | (0b11 << GPIO_CRL_MODE2_Pos);
 	GPIOD->BSRR |= GPIO_BSRR_BR2;
 #endif
 		
@@ -237,6 +238,7 @@ uint8_t spi_sd_init() {
 	spi_set_ls();
 	//100 to 400 khz, change after setup
 	/* SPI_SD->CR1 |= SPI_CR1_SSI; */
+	uint8_t cnt = 0;
  CMD0:
 	led_state &= 0xffff;
 	SD_CS |= CS_Msk;
@@ -257,16 +259,17 @@ uint8_t spi_sd_init() {
 	command[5] = 0x95;
 	cmd_syncronous();
 	r1_syncronous();
-	if (reply[0] == 0x00) {
-		for(uint32_t i=0;i<7200000;i++)__NOP();
-		goto CMD0;
-	}
 	if (reply[0] != 0x01) {
 		led_state |= 0x0f000000;
 		led_state |= reply[0]<<16;
 		return 0;
 	}
-
+	else{
+		for(uint32_t i=0;i<7200000;i++)__NOP();
+		if(++cnt < MAX_RESET_RETRIES)
+			goto CMD0;
+	}
+	
 	command[0] = SD_COMMAND | 8;
 	command[1] = 0;
 	command[2] = 0;

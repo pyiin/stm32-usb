@@ -4,7 +4,7 @@
 #include "flash.h"
 #include "misc.h"
 
-#define SCSI_EP 2
+#define SCSI_EP 3
 #define BLOCK_SIZE_pos 11
 #define BLOCK_SIZE (1<<BLOCK_SIZE_pos)
 #define BASE_BLOCK_OFFSET 16
@@ -52,10 +52,10 @@ enum {
 } scsi_status = cbw;
 
 void init_scsi() {
-	usb_ep_buf_set(2, (uint32_t *)&scsi_cbw);
-	ep_in_enable(2, 2, EP_bulk, 64);
-	ep_out_enable(2, EP_bulk, 64);
-	usb_set_out_ep(2, 31, 1);
+	usb_ep_buf_set(SCSI_EP, (uint32_t *)&scsi_cbw);
+	ep_in_enable(SCSI_EP, SCSI_EP, EP_bulk, 64);
+	ep_out_enable(SCSI_EP, EP_bulk, 64);
+	usb_set_out_ep(SCSI_EP, 31, 1);
 	scsi_status = cbw;
 }
 
@@ -107,7 +107,7 @@ void recieve_bulk_scsi() { //rename to cbw
 }
 
 void scsi_error_transaction() {
-	
+	__NOP();
 }
 
 uint8_t mode_sense_response[192] = {
@@ -137,7 +137,7 @@ uint8_t read_mode = 0;
 void scsi_read() {
 	uint32_t block = scsi_cbw.cbw[4]<<8 | scsi_cbw.cbw[5];
 	uint16_t numblocks;//TODO start block
-	usbWrite(2, (uint32_t*)(flash+(block<<BLOCK_SIZE_pos)+sent), 128);
+	usbWrite(SCSI_EP, (uint32_t*)(flash+(block<<BLOCK_SIZE_pos)+sent), 128);
 	sent += 128;
 	if(sent < scsi_cbw.data_transfer_length)
 		scsi_status = cbw;
@@ -152,11 +152,12 @@ uint32_t bsent = 0;
 void scsi_packet_recieved(uint8_t psize) {
 	if(!read_mode) return;
 	bsent += psize;
+	usb_ep_buf_set(SCSI_EP, (uint32_t*)(data+bsent));
 	if (bsent >= (1 << BLOCK_SIZE_pos)) {
 		USB_OTG_OUTEndpointTypeDef* epout = usbEpout(SCSI_EP);
 		epout->DOEPCTL |= USB_OTG_DOEPCTL_SNAK;
 		flash_write_page(block + BASE_BLOCK_OFFSET, (uint16_t*) data);
-		usb_ep_buf_set(2, (uint32_t*)data);
+		usb_ep_buf_set(SCSI_EP, (uint32_t*)data);
 		block++;
 		bsent = 0;
 		epout->DOEPCTL |= USB_OTG_DOEPCTL_CNAK;
@@ -168,9 +169,9 @@ void scsi_write() {
 	uint16_t numblocks = scsi_cbw.cbw[7]<<8 | scsi_cbw.cbw[8];
 	read_mode = 1;
 	bsent = 0;
-	usb_ep_buf_set(2, (uint32_t*)data);
+	usb_ep_buf_set(SCSI_EP, (uint32_t*)data);
 	/* usb_ep_buf_set(2, (uint32_t *)(data + (block<<BLOCK_SIZE_pos))); */
-	usb_set_out_ep(2, scsi_cbw.data_transfer_length, scsi_cbw.data_transfer_length>>6);
+	usb_set_out_ep(SCSI_EP, scsi_cbw.data_transfer_length, scsi_cbw.data_transfer_length>>6);
 	/* scsi_csw.data_residue = scsi_cbw.data_transfer_length - 512; */
 	scsi_status = csw;
 }
@@ -179,24 +180,24 @@ void scsi_write() {
 void parse_scsi_command() {
 	switch (scsi_cbw.cbw[0]) {
 	case 0x00: // test unit ready
-		usbZLP(2);
+		usbZLP(SCSI_EP);
 		scsi_status = in;
 		break;
 	case 0x12: // inquiry
-		usbWrite(2, (uint32_t *)inquiry_response, scsi_cbw.data_transfer_length);
+		usbWrite(SCSI_EP, (uint32_t *)inquiry_response, scsi_cbw.data_transfer_length);
 		scsi_status = in;
 		break;
 	case 0x1a: // mode_sense6
-		usbWrite(2, (uint32_t*)mode_sense_response, sizeof(mode_sense_response));
+		usbWrite(SCSI_EP, (uint32_t*)mode_sense_response, sizeof(mode_sense_response));
 		scsi_csw.data_residue = scsi_cbw.data_transfer_length - sizeof(mode_sense_response);
 		scsi_status = in;
 		break;
 	case 0x1e: // prevent/allow removal
-		usbZLP(2);
+		usbZLP(SCSI_EP);
 		scsi_status = in;
 		break;
 	case 0x25: // read_capacity10
-		usbWrite(2, (uint32_t*)capacity, 8);
+		usbWrite(SCSI_EP, (uint32_t*)capacity, 8);
 		scsi_status = in;
 		break;
 	case 0x28: // read10
@@ -206,7 +207,7 @@ void parse_scsi_command() {
 		scsi_write();
 		break;
 	default:
-		usbZLP(2);
+		usbZLP(SCSI_EP);
 		scsi_status = in;
 		break;
 	}
@@ -215,7 +216,7 @@ void parse_scsi_command() {
 void reply_bulk_scsi() {
 	read_mode = 0;
 	usbWrite(SCSI_EP, (uint32_t*)&scsi_csw, 13);
-	usb_ep_buf_set(2, (uint32_t *)&scsi_cbw);
-	usb_set_out_ep(2, 31, 1);
+	usb_ep_buf_set(SCSI_EP, (uint32_t *)&scsi_cbw);
+	usb_set_out_ep(SCSI_EP, 31, 1);
 	scsi_status = csw;
 }

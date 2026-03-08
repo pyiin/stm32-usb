@@ -1,6 +1,6 @@
 .PHONY: flash clean
 
-PARAMS = -mcpu=cortex-m3 -std=gnu11 -DSTM32 -DSTM32F105RBTx -DSTM32F1 -c -O2 -ffunction-sections -fdata-sections -Wall -fstack-usage -ggdb3 --specs=nano.specs -mfloat-abi=soft -mthumb -DHW3
+PARAMS = -mcpu=cortex-m3 -std=gnu11 -DSTM32 -DSTM32F105RBTx -DSTM32F1 -c -O2 -ffunction-sections -fdata-sections -Wall -fstack-usage -ggdb3 --specs=nano.specs -mfloat-abi=soft -mthumb -Wno-unused-variable -DHW3
 
 usb.o: usb.c
 	arm-none-eabi-gcc $^ ${PARAMS} -o $@
@@ -29,7 +29,6 @@ spi_sd.o: spi_sd.c
 key_matrix.o: key_matrix.c
 	arm-none-eabi-gcc $^ ${PARAMS} -o $@
 
-
 flash.o: flash.c
 	arm-none-eabi-gcc $^ ${PARAMS} -o $@
 
@@ -43,4 +42,4 @@ flash: main.bin
 	st-flash write main.bin 0x08000000
 
 clean:
-	rm *.d *.o *.su
+	rm -f -- *.d *.o *.su

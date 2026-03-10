@@ -11,7 +11,7 @@ void uart_rx_init() {
 	GPIOB->CRL &= ~( GPIO_CRL_MODE6 | GPIO_CRL_CNF6);
 	GPIOB->CRL |= (0b01 << GPIO_CRL_CNF6_Pos) | (0b00 << GPIO_CRL_MODE6_Pos);
 
-	USART1->BRR = (16<<4);//128.0
+	USART1->BRR = 0x0271;//128.0
 	USART1->CR3 = 0;
 	USART1->CR1 = USART_CR1_RXNEIE | USART_CR1_IDLEIE | USART_CR1_UE | USART_CR1_RE;
 
@@ -21,15 +21,18 @@ void uart_rx_init() {
 
 void USART1_IRQHandler() {
 	static uint8_t pos = 0;
-	if (USART1->SR & USART_SR_IDLE) {
-		pos = 0;
-	}
-	if (USART1->SR & USART_SR_RXNE) {
-		right_key_state[pos++] = USART1->DR;
-		if(pos>=4) pos = 0;
-		USART1->SR &= ~USART_SR_RXNE;
-	}
 	if (USART1->SR & USART_SR_ORE) {
 		usart_overrun = 1;
+	}
+
+	if (USART1->SR & USART_SR_RXNE) {
+		uint8_t data = USART1->DR;
+		if(pos<4)
+			right_key_state[pos++] = data;
+	}
+	if (USART1->SR & USART_SR_IDLE) {
+		pos = 0;
+		(void) USART1->SR;
+		(void) USART1->DR;
 	}
 }

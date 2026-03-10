@@ -10,9 +10,9 @@ void uart_tx_init() {
 	GPIOB->CRL &= ~( GPIO_CRL_MODE6 | GPIO_CRL_CNF6);
 	GPIOB->CRL |= (0b10 << GPIO_CRL_CNF6_Pos) | (0b11 << GPIO_CRL_MODE6_Pos);
 
-	USART1->BRR = (16<<4);//128.0
+	USART1->BRR = 0x0271;//128.0
 	USART1->CR3 = USART_CR3_DMAT;
-	USART1->CR1 = USART_CR1_UE | USART_CR1_TE;	
+	USART1->CR1 = USART_CR1_UE | USART_CR1_TE;
 	//idle interrupt.
 	// on idle set dma to correct amount of data to buffer.
 	// only rx

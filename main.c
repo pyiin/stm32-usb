@@ -5,6 +5,7 @@
 #include "ps2.h"
 #include "spi_sd.h"
 #include "key_matrix.h"
+#include "uart.h"
 
 
 uint8_t keys[8] = {
@@ -70,6 +71,8 @@ void led_setup(){
 uint8_t blkbuf[1024];
 
 extern uint8_t key_state[4];
+extern uint8_t right_key_state[4];
+extern uint8_t usart_overrun;
 
 int main(void)
 {
@@ -98,6 +101,7 @@ int main(void)
 	spi_sd_readblock(0, blkbuf);
 #ifdef HW3
 	key_setup();
+	uart_rx_init();
 #endif
 	while (1) {
 	}

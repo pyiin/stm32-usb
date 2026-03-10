@@ -1,28 +1,13 @@
 #include <stdint.h>
 #include "stm32f1xx.h"
-#include "usb.h"
 #include "misc.h"
-#include "ps2.h"
-#include "spi_sd.h"
 #include "key_matrix.h"
-
-
-uint8_t keys[8] = {
-	0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00,
-};
-
-uint8_t empty[8] = {
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-};
-
-uint32_t buffer[10];
-
-uint32_t led_state=0b0;
+#include "uart.h"
 
 void tim6_setup(){
 	RCC->APB1ENR |= RCC_APB1ENR_TIM6EN;
 
-	TIM6->PSC = 71;
+	TIM6->PSC = 710;
 	TIM6->ARR = 99;
 
 	TIM6->EGR = TIM_EGR_UG;
@@ -36,40 +21,32 @@ void tim6_setup(){
 
 
 void TIM6_IRQHandler(){
-	/* static uint32_t num = 0; */
-	/* if(num==2000){ */
-	/* 	led_state<<=1, num=0; */
-	/* 	if(led_state == 0) led_state = 1; */
-	/* } */
-	static uint8_t current_led = 0;
 	if (TIM6->SR & TIM_SR_UIF)
 		TIM6->SR &= ~TIM_SR_UIF;
-	if(led_state & (1<<(current_led)))
-		light_id(current_led);
-	else
-		light_off();
-	++current_led;
-	if(current_led==13) current_led = 16;
-	if(current_led==31) current_led = 0;
-	/* num++; */
+	read_keys();
+	dma_send_usart();
 }
-
-void led_setup(){
-	//pc11,12; pd2; pb3..9; pc0..3;
-	GPIOC->CRH = 0x00033000;
-	GPIOC->CRL = 0x00003333;
-	GPIOD->CRL = 0x00000300;
-	GPIOB->CRL = 0x33333000;
-	GPIOB->CRH = 0x00000033;
-	GPIOA->ODR = 0;
-	GPIOB->ODR = 0;
-	GPIOC->ODR = 0;
-	GPIOD->ODR = 0;
-}
-
-uint8_t blkbuf[1024];
 
 extern uint8_t key_state[4];
+
+void clock_setup(){
+	RCC->CR |= RCC_CR_HSEON; //enable hse
+	while(!(RCC->CR & RCC_CR_HSERDY));
+
+	//setup prediv12 and prediv1scr
+	RCC->CFGR2 |= RCC_CFGR2_PREDIV1_DIV2;
+	RCC->CFGR |= (0b0111<<RCC_CFGR_PLLMULL_Pos);
+	RCC->CFGR |= (0b0<<RCC_CFGR_OTGFSPRE_Pos);
+	RCC->CFGR |= RCC_CFGR_PLLSRC;
+
+	//enable pll
+	RCC->CR |= RCC_CR_PLLON;
+	while(!(RCC->CR & RCC_CR_PLLRDY));
+
+	FLASH->ACR = FLASH_ACR_LATENCY_2 | FLASH_ACR_PRFTBE;
+	//switch to pll
+	RCC->CFGR |= RCC_CFGR_SW_PLL;
+}
 
 int main(void)
 {
@@ -78,28 +55,17 @@ int main(void)
 		RCC_APB2ENR_IOPDEN | RCC_APB2ENR_AFIOEN; // 0x3c;
 	AFIO->MAPR |= (0x2 << 24);//debugging ports remap
 
-	NVIC_EnableIRQ(SysTick_IRQn);
-	NVIC_SetPriority(SysTick_IRQn,2);
+	/* NVIC_EnableIRQ(SysTick_IRQn); */
+	/* NVIC_SetPriority(SysTick_IRQn,2); */
 
 	clock_setup();
-	
-#ifdef HW2
-	led_setup();
+	uart_tx_init();
 	tim6_setup();
-#endif
-	spi1_init();
-	spi_sd_init();
-	
-	usb_core_init();
-	usb_device_init();
-	usb_ep_buf_set(0,buffer);
-
-	/* ps2_enable(); */
-	spi_sd_readblock(0, blkbuf);
-#ifdef HW3
 	key_setup();
-#endif
 	while (1) {
+		/* read_keys(); */
+		/* dma_send_usart(); */
+		/* for(uint32_t i=0; i<100000000; i++) __NOP(); */
 	}
 }
 

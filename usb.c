@@ -850,7 +850,7 @@ void usb_interrupt_in_handler() {
 		if (ep->DIEPINT & USB_OTG_DIEPINT_XFRC)
 			ep->DIEPINT = USB_OTG_DIEPINT_XFRC;
 		read_keys();
-		key_to_report();
+		get_report();
 		usbWrite(HID_EPID, kbd_report, HID_PCKTSIZ);
 
 	}

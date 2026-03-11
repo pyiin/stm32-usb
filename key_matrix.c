@@ -1,8 +1,16 @@
 #include "stm32f1xx.h"
+#include "key_matrix.h"
 
 #define GPIOA_col (1<<7)
 #define GPIOB_col ((1<<2) | (1<<1) | (1<<0))
 #define GPIOC_col ((1<<5) | (1<<4))
+
+
+extern uint8_t kbd_report[32];
+uint8_t key_state[4];
+uint8_t left_key_state[4];
+extern uint8_t right_key_state[4];
+
 
 void key_setup() {
 	GPIOA->CRL &= ~(GPIO_CRL_MODE5 | GPIO_CRL_CNF5 //row4
@@ -31,12 +39,13 @@ void key_setup() {
 	GPIOC->BSRR = GPIO_BSRR_BR4 | GPIO_BSRR_BR5;
 }
 
-uint8_t key_state[4];
+
+
 
 inline void get_row(uint8_t row) {
-	key_state[row]  = (GPIOA_col & GPIOA->IDR);
-	key_state[row] |= (GPIOB_col & GPIOB->IDR);
-	key_state[row] |= (GPIOC_col & GPIOC->IDR);
+	left_key_state[row]  = (GPIOA_col & GPIOA->IDR);
+	left_key_state[row] |= (GPIOB_col & GPIOB->IDR);
+	left_key_state[row] |= (GPIOC_col & GPIOC->IDR);
 	//quite lucky that they do not intersect
 }
 
@@ -61,7 +70,7 @@ void read_keys() {
 	GPIOA->BSRR = GPIO_BSRR_BR5;
 }
 
-uint8_t report_transl[32] = {
+uint8_t report_l_transl[32] = {
 	[0*8+0] = 'e'-'a'+16,
 	[0*8+1] = 'r'-'a'+16,
 	[0*8+2] = 't'-'a'+16,
@@ -95,17 +104,59 @@ uint8_t report_transl[32] = {
 	[3*8+4] = 255,	[3*8+7] = 255,
 };
 
-extern uint8_t kbd_report[32];
-void key_to_report(){ //for now simple mapping, will need to set up layers later
-	uint32_t* data = (uint32_t*)&key_state; //maybe union is better
+uint8_t report_r_transl[32] = {
+	[0*8+0] = 'e'-'a'+16,
+	[0*8+1] = 'r'-'a'+16,
+	[0*8+2] = 't'-'a'+16,
+	[0*8+4] = 'q'-'a'+16,
+	[0*8+5] = 'w'-'a'+16,
+	[0*8+7] = 0x2b + 12,
+	
+	[1*8+0] = 'd'-'a'+16,
+	[1*8+1] = 'f'-'a'+16,
+	[1*8+2] = 'g'-'a'+16,
+	[1*8+4] = 'a'-'a'+16,
+	[1*8+5] = 's'-'a'+16,
+	[1*8+7] = 1,
+	
+	[2*8+0] = 'c'-'a'+16,
+	[2*8+1] = 'v'-'a'+16,
+	[2*8+2] = 'b'-'a'+16,
+	[2*8+4] = 'z'-'a'+16,
+	[2*8+5] = 'x'-'a'+16,
+	[2*8+7] =  0x4c+12,
+	
+	[3*8+0] = 3,
+	[3*8+1] = 0,
+	[3*8+2] = 44+12,//space
+	[3*8+5] = 2,
+
+	[0*8+3] = 255,	[0*8+6] = 255,
+	[1*8+3] = 255,	[1*8+6] = 255,
+	[2*8+3] = 255,	[2*8+6] = 255,
+	[3*8+3] = 255,	[3*8+6] = 255,
+	[3*8+4] = 255,	[3*8+7] = 255,
+};
+
+
+
+void get_report() {
+	for(uint8_t i = 0; i<32; i++)
+		kbd_report[i] = 0;
+	key_to_report(*((uint32_t*)&left_key_state), report_l_transl);
+	key_to_report(*((uint32_t*)&right_key_state), report_r_transl);
+}
+
+
+void key_to_report(uint32_t data, uint8_t transl[32]){ //for now simple mapping, will need to set up layers later
 	for(uint8_t i=0; i<32; i++){
-		uint8_t whole = report_transl[i];
+		uint8_t whole = transl[i];
 		if(whole==255) continue;
 		uint8_t bit = whole & 0x07;
 		uint8_t byte = (whole>>3);
-		if(*data & (1<<i))
+		if(data & (1<<i))
 			kbd_report[byte] |= (1<<bit);
-		else
-			kbd_report[byte] &= ~(1<<bit);
+		/* else */
+		/* 	kbd_report[byte] &= ~(1<<bit); */
 	}
 }

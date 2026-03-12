@@ -18,7 +18,7 @@
 
 uint8_t command[6] = {
 	0x40, 0x00, 0x00, 0x00, 0x00, 0x95,
-};
+nnn};
 
 enum {
 	IDLE,
@@ -363,18 +363,8 @@ uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 	while ((ans = spi_rxtx_sync(0xff)) == 0xff);
 
 	dma_rcv_fn = 0;
-
-	GPIOC->BSRR |= GPIO_BSRR_BS4;//trigger scope
 	DMA1_Channel2->CCR |= DMA_CCR_EN;
-
-
 	DMA1_Channel3->CCR |= DMA_CCR_EN;
-
-	/* for (uint32_t i = 0; i < 512; i++) { */
-	/* 	while (!(SPI_SD->SR & SPI_SR_TXE)); */
-	/* 	SPI_SD->DR = 0xff; */
-	/* } */
-
 	sd_state = DMA_CMD;
 
 	/* dma_rcv_fn = buffer_ready; */
@@ -383,6 +373,27 @@ uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 
 uint8_t spi_sd_writeblock(uint32_t blknum, void* blkbuf) {
 	if(!SD_ready) return 0;
+	command[0] = 0x40 | 24;
+	command[1] = blknum & 0xff000000;
+	command[2] = blknum & 0xff0000;
+	command[3] = blknum & 0xff00;
+	command[4] = blknum & 0xff;
+	command[5] = 0;
+	static uint32_t ff = 0;
+	ff=0xff;
+	DMA1_Channel3->CNDTR = BLOCK_SIZE;
+	DMA1_Channel3->CMAR = (uint32_t)(blkbuf);
+	DMA1_Channel3->CCR |= DMA_CCR_MINC; //increment
+
+	cmd_syncronous();
+	uint8_t ans = 0;
+	r1_syncronous();
+	__NOP();
+	while ((ans = spi_rxtx_sync(0xff)) == 0xff);
+
+	dma_snd_fn = 0;
+	DMA1_Channel3->CCR |= DMA_CCR_EN;
+	sd_state = DMA_CMD;
 	return 1;
 }
 

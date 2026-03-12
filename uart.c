@@ -1,7 +1,8 @@
 #include "stm32f1xx.h"
 
 uint8_t right_key_state[4];
-uint32_t usart_overrun = 0;
+uint8_t usart_overrun = 0;
+uint32_t usart_overrun_cnt = 0;
 
 void uart_rx_init() {
 	AFIO->MAPR |= AFIO_MAPR_USART1_REMAP;
@@ -23,6 +24,7 @@ void USART1_IRQHandler() {
 	static uint8_t pos = 0;
 	if (USART1->SR & USART_SR_ORE) {
 		usart_overrun=2;
+		usart_overrun_cnt++;
 	}
 	if (USART1->SR & USART_SR_IDLE) {
 		if(usart_overrun>0) usart_overrun--;

@@ -73,6 +73,7 @@ uint8_t blkbuf[1024];
 extern uint8_t key_state[4];
 extern uint8_t right_key_state[4];
 extern uint8_t usart_overrun;
+extern uint32_t usart_overrun_cnt;
 
 int main(void)
 {

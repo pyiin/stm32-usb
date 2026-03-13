@@ -1,4 +1,5 @@
 #include "stm32f1xx.h"
+#include "usb_scsi.h"
 
 #define BLOCK_SIZE 512
 #define SPI_SD SPI1
@@ -18,7 +19,7 @@
 
 uint8_t command[6] = {
 	0x40, 0x00, 0x00, 0x00, 0x00, 0x95,
-nnn};
+};
 
 enum {
 	IDLE,
@@ -121,8 +122,8 @@ void spi1_init(){
 		| DMA_CCR_TCIE;
 	NVIC_EnableIRQ(DMA1_Channel2_IRQn);
 	NVIC_EnableIRQ(DMA1_Channel3_IRQn);
-	NVIC_SetPriority(DMA1_Channel2_IRQn,2);
-	NVIC_SetPriority(DMA1_Channel3_IRQn,2);
+	NVIC_SetPriority(DMA1_Channel2_IRQn,0);
+	NVIC_SetPriority(DMA1_Channel3_IRQn,0);
 
 	SPI_SD->CR2 = SPI_CR2_RXDMAEN
 		| SPI_CR2_TXDMAEN;
@@ -239,6 +240,7 @@ uint8_t spi_sd_init() {
 	//100 to 400 khz, change after setup
 	/* SPI_SD->CR1 |= SPI_CR1_SSI; */
 	uint8_t cnt = 0;
+	for(uint32_t i=0;i<7200000;i++)__NOP();
  CMD0:
 	led_state &= 0xffff;
 	SD_CS |= CS_Msk;
@@ -324,45 +326,62 @@ uint8_t spi_sd_init() {
 	cmd_syncronous();
 	r7_syncronous();
 	if (reply[1] & (1 << 7)) {
-		SD_ready = 1;
 		spi_set_hs();
 		read_csd_sync();
 	} else
 		return 0;
+	SD_ready = 1;
 	return 1;
 }
 
 
 
-uint8_t spi_sd_readsize() {
+uint8_t spi_sd_readsize(uint32_t* capacity) {
 	if(!SD_ready) return 0;
+	/* capacity[1] = BLOCK_SIZE; */
+	uint32_t blkcnt = (sd_csd.dsize[2])
+				   | (sd_csd.dsize[1]<<8)
+				   | (sd_csd.dsize[0]<<16);
+	blkcnt <<= 10;
+	blkcnt |= 0b1111111111;
+	capacity[0] = ((blkcnt&0xff000000) >> 24)
+		| ((blkcnt&0x00ff0000) >> 8)
+		| ((blkcnt&0x0000ff00) << 8)
+		| ((blkcnt&0x000000ff) << 24);
+	/* capacity[0] <<= 10; //that was in kilobytes */
+	/* capacity[0]--; // LBA  */
 	return 1;
 }
 
 uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 	if(!SD_ready) return 0;
 	command[0] = 0x40 | 17;
-	command[1] = blknum & 0xff000000;
-	command[2] = blknum & 0xff0000;
-	command[3] = blknum & 0xff00;
+	command[1] = (blknum & 0xff000000) >> 24;
+	command[2] = (blknum & 0xff0000) >> 16;
+	command[3] = (blknum & 0xff00) >> 8;
 	command[4] = blknum & 0xff;
 	command[5] = 0;
 	static uint32_t ff = 0;
 	ff=0xff;
-	DMA1_Channel3->CNDTR = BLOCK_SIZE;
+	DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+	DMA1_Channel2->CCR &= ~DMA_CCR_EN;
+	
+	DMA1_Channel3->CNDTR = BLOCK_SIZE+2;
 	DMA1_Channel3->CMAR = (uint32_t)(&ff);
 	DMA1_Channel3->CCR &= ~DMA_CCR_MINC; //not increment
 
-	DMA1_Channel2->CNDTR = BLOCK_SIZE;
+	DMA1_Channel2->CNDTR = BLOCK_SIZE+2;
 	DMA1_Channel2->CMAR = (uint32_t)blkbuf;
-
+ CMD17:
 	cmd_syncronous();
 	uint8_t ans = 0;
 	r1_syncronous();
-	__NOP();
+	if(reply[0] & 0xfe)
+		goto CMD17;
 	while ((ans = spi_rxtx_sync(0xff)) == 0xff);
 
 	dma_rcv_fn = 0;
+	dma_snd_fn = 0;
 	DMA1_Channel2->CCR |= DMA_CCR_EN;
 	DMA1_Channel3->CCR |= DMA_CCR_EN;
 	sd_state = DMA_CMD;
@@ -381,7 +400,7 @@ uint8_t spi_sd_writeblock(uint32_t blknum, void* blkbuf) {
 	command[5] = 0;
 	static uint32_t ff = 0;
 	ff=0xff;
-	DMA1_Channel3->CNDTR = BLOCK_SIZE;
+	DMA1_Channel3->CNDTR = BLOCK_SIZE+2;
 	DMA1_Channel3->CMAR = (uint32_t)(blkbuf);
 	DMA1_Channel3->CCR |= DMA_CCR_MINC; //increment
 
@@ -396,15 +415,21 @@ uint8_t spi_sd_writeblock(uint32_t blknum, void* blkbuf) {
 	sd_state = DMA_CMD;
 	return 1;
 }
-
+uint32_t rcvcnt = 0;
+extern volatile uint8_t data_ready;
 void DMA1_Channel2_IRQHandler() { //recieve
-	DMA1->IFCR = DMA_IFCR_CGIF2;
+	DMA1->IFCR = DMA_IFCR_CTCIF2;
 	if(dma_rcv_fn)
 		dma_rcv_fn();
+	sd_state = IDLE;
+	data_ready=1;
+	rcvcnt++;
 }
 
 void DMA1_Channel3_IRQHandler() { //transmit
-	DMA1->IFCR = DMA_IFCR_CGIF3;
+	DMA1->IFCR = DMA_IFCR_CTCIF3;
 	if(dma_snd_fn)
 		dma_snd_fn();
+	sd_state = IDLE;
+
 }

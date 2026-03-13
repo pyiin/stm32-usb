@@ -5,3 +5,4 @@ void init_scsi();
 void scsi_packet_in();
 void scsi_packet_sent();
 void scsi_packet_recieved(uint8_t);
+void scsi_send_queued();

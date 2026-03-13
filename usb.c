@@ -16,11 +16,11 @@ extern uint8_t kbd_report[32];
 
 uint8_t l = 0;
 
-#define RX_FIFO_DEPTH_IN_WORDS 150
-#define TX0_FIFO_DEPTH_IN_WORDS 50
+#define RX_FIFO_DEPTH_IN_WORDS 100
+#define TX0_FIFO_DEPTH_IN_WORDS 64
 #define TX1_FIFO_DEPTH_IN_WORDS 16
 #define TX2_FIFO_DEPTH_IN_WORDS 16
-#define TX3_FIFO_DEPTH_IN_WORDS 64
+#define TX3_FIFO_DEPTH_IN_WORDS 124
 
 enum  {
 	idle,
@@ -432,7 +432,7 @@ void usbZLP(uint8_t ep) {
     endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
 }
 
-void usbWrite(uint8_t ep, void* data, uint32_t len) {
+uint8_t usbWrite(uint8_t ep, void* data, uint32_t len) {
     USB_OTG_INEndpointTypeDef* endpoint = usbEpin(ep);
     volatile uint32_t* fifo = usbEpFifo(ep);
 
@@ -441,12 +441,14 @@ void usbWrite(uint8_t ep, void* data, uint32_t len) {
     while (wordLen > (endpoint->DTXFSTS & 0xffff))
 		;
 	if ((ep != 0) && (endpoint->DIEPCTL & USB_OTG_DIEPCTL_EPENA)) {
-        return;
+        return 0;
     }
+
 	uint32_t pcktcnt = ((len+63)>>6);
 	endpoint->DIEPTSIZ = (pcktcnt << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
     endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
     usbRawWrite(fifo, data, len);
+	return 1;
 }
 void usbWrite0(uint32_t *data, uint32_t len) {
 	if (len <= 64) {
@@ -578,7 +580,7 @@ void clock_setup(){
 void usb_core_init() {
 	//make sure to set up vsense pin
     USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_PWRDWN; // enable USB transceiver
-    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT;// | USB_OTG_GAHBCFG_PTXFELVL | USB_OTG_GAHBCFG_TXFELVL; //fifos completely empty
+    USB_OTG_FS->GAHBCFG |= USB_OTG_GAHBCFG_GINT | USB_OTG_GAHBCFG_TXFELVL;
 
     USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_TOCAL_0 | USB_OTG_GUSBCFG_TOCAL_1 | USB_OTG_GUSBCFG_TOCAL_2; // add clock cycles inter-packet timeout
     USB_OTG_FS->GUSBCFG |= (0x6 << USB_OTG_GUSBCFG_TRDT_Pos); //turnaround time
@@ -590,7 +592,7 @@ void usb_core_init() {
 	USB_OTG_FS->GINTSTS = 0xffffffff; //zero all interrupts
 
 	//set up interrupts
-	NVIC_SetPriority(OTG_FS_IRQn, 1);
+	NVIC_SetPriority(OTG_FS_IRQn, 2);
     NVIC_EnableIRQ(OTG_FS_IRQn);
 }
 
@@ -856,9 +858,10 @@ void usb_interrupt_in_handler() {
 	}
 	if (USB_OTG_FS_DEV->DAINT & 0x08) {
 		USB_OTG_INEndpointTypeDef *ep = usbEpin(3);
-		if (ep->DIEPINT & USB_OTG_DIEPINT_XFRC)
-            ep->DIEPINT = USB_OTG_DIEPINT_XFRC;
-		scsi_packet_sent();
+		if (ep->DIEPINT & USB_OTG_DIEPINT_XFRC) {
+			ep->DIEPINT = USB_OTG_DIEPINT_XFRC;
+			scsi_packet_sent();
+		}
 	}
 }
 

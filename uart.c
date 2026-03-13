@@ -17,7 +17,7 @@ void uart_rx_init() {
 	USART1->CR1 = USART_CR1_RXNEIE | USART_CR1_IDLEIE | USART_CR1_UE | USART_CR1_RE;
 
 	NVIC_EnableIRQ(USART1_IRQn);
-	NVIC_SetPriority(USART1_IRQn,2);
+	NVIC_SetPriority(USART1_IRQn,1);
 }
 
 void USART1_IRQHandler() {

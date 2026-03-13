@@ -30,7 +30,7 @@ void tim6_setup(){
 	TIM6->DIER |= TIM_DIER_UIE;
 
 	NVIC_EnableIRQ(TIM6_IRQn);
-	NVIC_SetPriority(TIM6_IRQn,2);
+	NVIC_SetPriority(TIM6_IRQn,3);
 
 	TIM6->CR1 |= TIM_CR1_CEN;
 }
@@ -75,6 +75,11 @@ extern uint8_t right_key_state[4];
 extern uint8_t usart_overrun;
 extern uint32_t usart_overrun_cnt;
 
+extern uint32_t readcnt;
+extern uint32_t rcvcnt;
+extern uint32_t sdcnt;
+extern uint32_t sentcnt;
+
 int main(void)
 {
 	__enable_irq();
@@ -83,7 +88,7 @@ int main(void)
 	AFIO->MAPR |= (0x2 << 24);//debugging ports remap
 
 	NVIC_EnableIRQ(SysTick_IRQn);
-	NVIC_SetPriority(SysTick_IRQn,2);
+	NVIC_SetPriority(SysTick_IRQn,3);
 
 	clock_setup();
 	
@@ -93,18 +98,24 @@ int main(void)
 #endif
 	spi1_init();
 	spi_sd_init();
+	/* spi_sd_readblock(0, blkbuf); */
+	/* for(uint32_t i = 0; i<1000000; i++) __NOP(); */
+	/* spi_sd_readblock(1, blkbuf+512); */
 	
 	usb_core_init();
 	usb_device_init();
 	usb_ep_buf_set(0,buffer);
 
 	/* ps2_enable(); */
-	spi_sd_readblock(0, blkbuf);
+
 #ifdef HW3
 	key_setup();
 	uart_rx_init();
 #endif
 	while (1) {
+		USB_OTG_INEndpointTypeDef *ep = usbEpin(3);
+		uint32_t diepint = ep->DIEPINT;
+		uint32_t diepsiz = ep->DIEPTSIZ;
 	}
 }
 

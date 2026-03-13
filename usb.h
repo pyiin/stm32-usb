@@ -146,7 +146,7 @@ void clock_setup();
 void usb_core_init();
 void usb_device_init();
 void usb_ep_buf_set(uint8_t ep, uint32_t *buf);
-void usbWrite(uint8_t ep, void* data, uint32_t len);
+uint8_t usbWrite(uint8_t ep, void* data, uint32_t len);
 void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint16_t packet_size);
 void ep_out_enable(uint8_t epn, uint8_t eptype, uint16_t packet_size);
 void usb_set_out_ep(uint8_t epnum, uint32_t size, uint16_t pcktcnt);

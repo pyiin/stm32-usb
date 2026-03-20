@@ -75,20 +75,20 @@ extern uint8_t right_key_state[4];
 extern uint8_t usart_overrun;
 extern uint32_t usart_overrun_cnt;
 
-extern uint32_t readcnt;
-extern uint32_t rcvcnt;
-extern uint32_t sdcnt;
-extern uint32_t sentcnt;
+extern volatile request_t rq;
+extern volatile uint8_t data_ready;
 
+extern volatile transfer_state_t scsi_transfer;
+extern volatile uint32_t num_written;
 int main(void)
 {
 	__enable_irq();
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN |
 		RCC_APB2ENR_IOPDEN | RCC_APB2ENR_AFIOEN; // 0x3c;
-	AFIO->MAPR |= (0x2 << 24);//debugging ports remap
+	AFIO->MAPR |= (0x2 << 24); // debugging ports remap
 
 	NVIC_EnableIRQ(SysTick_IRQn);
-	NVIC_SetPriority(SysTick_IRQn,3);
+	NVIC_SetPriority(SysTick_IRQn, 3);
 
 	clock_setup();
 	
@@ -112,10 +112,33 @@ int main(void)
 	key_setup();
 	uart_rx_init();
 #endif
+	volatile uint8_t reply_code;
 	while (1) {
-		USB_OTG_INEndpointTypeDef *ep = usbEpin(3);
-		uint32_t diepint = ep->DIEPINT;
-		uint32_t diepsiz = ep->DIEPTSIZ;
+		if (scsi_transfer == REQUEST_READ) {
+			spi_sd_readblock(rq.blknum, rq.buf);
+			while(!data_ready){}
+			/* __ISB(); */
+			/* __DSB(); */
+			/* __DMB(); */
+			__disable_irq();
+			scsi_send_queued();
+			__enable_irq();
+		}
+		if (scsi_transfer == REQUEST_WRITE) {
+			USB_OTG_OUTEndpointTypeDef* epout = usbEpout(3);//SCSI_EP
+			reply_code = spi_sd_writeblock(rq.blknum, rq.buf);
+			while(!data_ready){}
+			if (rq.next) {
+				__disable_irq();
+				usb_set_out_ep(3, 512, 512 >> 6);
+				__enable_irq();
+			} else {
+				__disable_irq();
+				reply_bulk_scsi();
+				__enable_irq();
+			}
+		}
+		reply_code = 0;
 	}
 }
 

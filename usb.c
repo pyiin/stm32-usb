@@ -16,11 +16,11 @@ extern uint8_t kbd_report[32];
 
 uint8_t l = 0;
 
-#define RX_FIFO_DEPTH_IN_WORDS 100
+#define RX_FIFO_DEPTH_IN_WORDS 150
 #define TX0_FIFO_DEPTH_IN_WORDS 64
 #define TX1_FIFO_DEPTH_IN_WORDS 16
 #define TX2_FIFO_DEPTH_IN_WORDS 16
-#define TX3_FIFO_DEPTH_IN_WORDS 124
+#define TX3_FIFO_DEPTH_IN_WORDS 64
 
 enum  {
 	idle,
@@ -443,10 +443,9 @@ uint8_t usbWrite(uint8_t ep, void* data, uint32_t len) {
 	if ((ep != 0) && (endpoint->DIEPCTL & USB_OTG_DIEPCTL_EPENA)) {
         return 0;
     }
-
 	uint32_t pcktcnt = ((len+63)>>6);
 	endpoint->DIEPTSIZ = (pcktcnt << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
-    endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK;
+    endpoint->DIEPCTL |= USB_OTG_DIEPCTL_EPENA | USB_OTG_DIEPCTL_CNAK| USB_OTG_DIEPCTL_USBAEP;
     usbRawWrite(fifo, data, len);
 	return 1;
 }

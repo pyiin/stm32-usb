@@ -55,18 +55,22 @@ void read_keys() {
 	GPIOB->BSRR = GPIO_BSRR_BR10 | GPIO_BSRR_BR11;
 	
 	GPIOB->BSRR = GPIO_BSRR_BS11;
+	for(uint32_t i=0; i<10; i++) __NOP();
 	get_row(0);
 	GPIOB->BSRR = GPIO_BSRR_BR11;
 	
 	GPIOB->BSRR = GPIO_BSRR_BS10;
+	for(uint32_t i=0; i<10; i++) __NOP();
 	get_row(1);
 	GPIOB->BSRR = GPIO_BSRR_BR10;
 	
 	GPIOA->BSRR = GPIO_BSRR_BS6;
+	for(uint32_t i=0; i<10; i++) __NOP();
 	get_row(2);
 	GPIOA->BSRR = GPIO_BSRR_BR6;
 	
 	GPIOA->BSRR = GPIO_BSRR_BS5;
+	for(uint32_t i=0; i<10; i++) __NOP();
 	get_row(3);
 	GPIOA->BSRR = GPIO_BSRR_BR5;
 }
@@ -129,7 +133,7 @@ uint8_t report_r_transl[32] = {//7,4,5,0,2,1
 	
 	[0*8+7] = 6, //alt gr
 	[0*8+4] = 44+12,
-	[0*8+5] = 255,
+	[0*8+5] = 1,
 	[0*8+0] = 255,
 
 	[3*8+3] = 255,	[3*8+6] = 255,
@@ -139,22 +143,40 @@ uint8_t report_r_transl[32] = {//7,4,5,0,2,1
 	[0*8+2] = 255,	[0*8+3] = 255,
 };
 
-#define MODE1_Msk (1<<(1*8+1))
-#define MODE2_Msk (1<<(2*8+7))
+#define MODE1R_Msk (1<<(1*8+1))
+#define MODE1L_Msk (1<<(2*8+7))
+
+#define MODE2R_Msk (1<<(0*8+0))
+#define MODE2L_Msk (1<<(3*8+5))
+
+#define TIMEOUT 8
+uint32_t timestamp = 0;
+uint32_t report_timestamp[32*8];
+
+void zero_report(){
+	for(uint32_t i = 0; i<22; i++){
+		for(uint32_t b = 0; b<8; b++){
+			if(timestamp - report_timestamp[i*8+b] > TIMEOUT)
+				kbd_report[i] &= ~(1<<b);
+		}
+	}
+	/* for(uint8_t i = 0; i<32; i++) */
+	/* 	kbd_report[i] = 0; */
+}
 
 void get_report() {
-	for(uint8_t i = 0; i<32; i++)
-		kbd_report[i] = 0;
-	if((*(uint32_t*)&right_key_state) & MODE1_Msk){
+	timestamp++;
+	zero_report();
+	if((*(uint32_t*)&right_key_state) & MODE1R_Msk || (*(uint32_t*)&left_key_state) & MODE1L_Msk){ // numpad layer
 		key_to_report(*((uint32_t*)&left_key_state), MODE1report_l_transl);
 		key_to_report(*((uint32_t*)&right_key_state), MODE1report_r_transl);
 	}
-	else if((*(uint32_t*)&left_key_state) & MODE2_Msk){
-		key_to_report(*((uint32_t*)&left_key_state), MODE1report_l_transl);
-		key_to_report(*((uint32_t*)&right_key_state), MODE1report_r_transl);
+	else if((*(uint32_t*)&right_key_state) & MODE2R_Msk || (*(uint32_t*)&left_key_state) & MODE2L_Msk){ // special keys
+		key_to_report(*((uint32_t*)&left_key_state), MODE2report_l_transl);
+		key_to_report(*((uint32_t*)&right_key_state), MODE2report_r_transl);
 	}
 	else{
-		key_to_report(*((uint32_t*)&left_key_state), report_l_transl);
+		key_to_report(*((uint32_t*)&left_key_state), report_l_transl); // normal mode
 		key_to_report(*((uint32_t*)&right_key_state), report_r_transl);
 	}
 }
@@ -163,12 +185,14 @@ void get_report() {
 void key_to_report(uint32_t data, uint8_t transl[32]){ //for now simple mapping, will need to set up layers later
 	for(uint8_t i=0; i<32; i++){
 		uint8_t whole = transl[i];
-		if(whole==255) continue;
+		if(whole==0xff) continue;
+		if((data & (1<<i)) && (whole & 0x80)) //add shift
+			kbd_report[0] |= (1<<1), whole &= 0x7f;
 		uint8_t bit = whole & 0x07;
 		uint8_t byte = (whole>>3);
-		if(data & (1<<i))
+		if(data & (1<<i)){
 			kbd_report[byte] |= (1<<bit);
-		/* else */
-		/* 	kbd_report[byte] &= ~(1<<bit); */
+			report_timestamp[whole] = timestamp;
+		}
 	}
 }

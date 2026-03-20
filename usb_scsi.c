@@ -1,6 +1,5 @@
 #include "usb.h"
 #include "stm32f1xx.h"
-#include "usb_scsi.h"
 #include "flash.h"
 #include "misc.h"
 #include "spi_sd.h"
@@ -142,21 +141,24 @@ uint8_t capacity[8] = {
 	0x00, 0x00, (1<<(BLOCK_SIZE_pos-8)), 0x00, //block_size
 };
 
-
-uint32_t readcnt = 0;
-uint32_t sdcnt = 0;
-uint32_t sentcnt = 0;
+volatile transfer_state_t scsi_transfer = NO_REQUEST;
 volatile uint8_t data_ready = 0;
+volatile uint8_t sd_request = 0;
+volatile request_t rq;
 void scsi_read() {
-	readcnt ++;
 	block = (scsi_cbw.cbw[2]<<24) | (scsi_cbw.cbw[3]<<16) | (scsi_cbw.cbw[4]<<8) | scsi_cbw.cbw[5];
 	numblocks = (scsi_cbw.cbw[7]<<8) | scsi_cbw.cbw[8];
 	if(blksent >= numblocks) return;
-	if (sent == 0) {
-		data_ready = 0;
-		spi_sd_readblock(block+blksent, data);
-		sdcnt++;
-		while(!data_ready){}
+	if (data_ready == 0) { //change to state enum
+		if (scsi_transfer == NO_REQUEST) {
+			/* USB_OTG_INEndpointTypeDef *ep = usbEpin(SCSI_EP); */
+			/* ep->DIEPCTL |= USB_OTG_DIEPCTL_SNAK; */
+			/* ep->DIEPCTL |= USB_OTG_DIEPCTL_EPDIS; */
+			rq.blknum = block+blksent;
+			rq.buf = data;
+			scsi_transfer = REQUEST_READ;
+		}
+		return;
 	}
 	scsi_send_queued();
 }
@@ -169,11 +171,9 @@ void scsi_send_queued() {
 		while (1) {
 		}
 	}
-
-	sentcnt++;
 	sent+=64;
 	if(sent >= BLOCK_SIZE)
-		sent=0, blksent++;
+		sent=0, blksent++, data_ready = 0;
 	if (blksent >= numblocks)
 		scsi_status = in;
 	else
@@ -192,33 +192,38 @@ void scsi_read_old() {
 }
 
 uint16_t* flash_buffer;
-uint32_t bsent = 0;
 
 void scsi_packet_recieved(uint8_t psize) {
 	if(!read_mode) return;
-	bsent += psize;
-	usb_ep_buf_set(SCSI_EP, (uint32_t*)(data+bsent));
-	if (bsent >= BLOCK_SIZE) {
-		USB_OTG_OUTEndpointTypeDef* epout = usbEpout(SCSI_EP);
-		epout->DOEPCTL |= USB_OTG_DOEPCTL_SNAK;
-		flash_write_page(block + BASE_BLOCK_OFFSET, (uint16_t*) data);
-		usb_ep_buf_set(SCSI_EP, (uint32_t*)data);
-		block++;
-		bsent = 0;
-		epout->DOEPCTL |= USB_OTG_DOEPCTL_CNAK;
+	sent += psize;
+	if (sent == BLOCK_SIZE) {
+		sent = 0;
+		rq.blknum = block+blksent-1;
+		rq.buf = (void*)data;
+		if(blksent != numblocks) rq.next = 1;
+		else rq.next = 0;
+		data_ready = 0;
+		scsi_transfer = REQUEST_WRITE;
 	}
+	usb_ep_buf_set(SCSI_EP, (uint32_t*)(data+sent));
 }
 
 void scsi_write() {
-	block = scsi_cbw.cbw[4]<<8 | scsi_cbw.cbw[5];
-	numblocks = scsi_cbw.cbw[7]<<8 | scsi_cbw.cbw[8];
+	block = (scsi_cbw.cbw[2]<<24) | (scsi_cbw.cbw[3]<<16) | (scsi_cbw.cbw[4]<<8) | scsi_cbw.cbw[5];
+	numblocks = (scsi_cbw.cbw[7]<<8) | scsi_cbw.cbw[8];
 	read_mode = 1;
-	bsent = 0;
-	usb_ep_buf_set(SCSI_EP, (uint32_t*)data);
-	/* usb_ep_buf_set(2, (uint32_t *)(data + (block<<BLOCK_SIZE_pos))); */
-	usb_set_out_ep(SCSI_EP, scsi_cbw.data_transfer_length, scsi_cbw.data_transfer_length>>6);
-	/* scsi_csw.data_residue = scsi_cbw.data_transfer_length - 512; */
-	scsi_status = csw;
+	sent = 0;
+	if (blksent < numblocks) {
+		USB_OTG_OUTEndpointTypeDef* epout = usbEpout(SCSI_EP);
+
+		usb_ep_buf_set(SCSI_EP, (uint32_t *)data);
+		/* usb_ep_buf_set(2, (uint32_t *)(data + (block<<BLOCK_SIZE_pos))); */
+		if(blksent == 0)
+			usb_set_out_ep(SCSI_EP, BLOCK_SIZE, BLOCK_SIZE >> 6);
+		/* scsi_csw.data_residue = scsi_cbw.data_transfer_length - 512; */
+		blksent++;
+	}
+	scsi_status = out;
 }
 
 // read10, read_capacity10, mode_sense6, inquiry, pewnie jakieś write

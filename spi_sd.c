@@ -17,6 +17,11 @@
 
 #define MAX_RESET_RETRIES 2
 
+extern volatile uint8_t sd_request;
+extern volatile uint8_t data_ready;
+extern volatile transfer_state_t scsi_transfer;
+
+
 uint8_t command[6] = {
 	0x40, 0x00, 0x00, 0x00, 0x00, 0x95,
 };
@@ -112,12 +117,14 @@ void spi1_init(){
 		| (0b00 << DMA_CCR_PSIZE_Pos)
 		| DMA_CCR_MINC
 		| (DMA_CCR_DIR) //tx
+		| DMA_CCR_TEIE
 		| DMA_CCR_TCIE;
 	DMA1_Channel2->CPAR = (uint32_t)&SPI_SD->DR;
 	DMA1_Channel2->CCR = (0b01 << DMA_CCR_PL_Pos)
 		| (0b00 << DMA_CCR_MSIZE_Pos)
 		| (0b00 << DMA_CCR_PSIZE_Pos)
 		| DMA_CCR_MINC
+		| DMA_CCR_TEIE
 		//		| (DMA_CCR_DIR) //rx
 		| DMA_CCR_TCIE;
 	NVIC_EnableIRQ(DMA1_Channel2_IRQn);
@@ -132,45 +139,6 @@ void spi1_init(){
 	SPI_SD->CR1 |= SPI_CR1_SPE; // spi enable
 }
 void sd_rcv_dmareturn();
-uint8_t sd_recieve_command(uint8_t *buf, uint8_t numbytes) {
-	/* if(sd_state != RESPONSE) return 0; */
-	DMA1_Channel3->CNDTR = numbytes;
-	DMA1_Channel3->CMAR = (uint32_t)buf;
-
-	DMA1_Channel3->CCR |= DMA_CCR_EN;
-	SPI_SD->CR2 |= SPI_CR2_RXDMAEN;
-	
-	dma_rcv_fn = sd_rcv_dmareturn;
-	return 1;
-}
-void sd_rcv_dmareturn() {
-	sd_state = CRC_SPI;
-	/* SPI_SD->CR1 |= SPI_CR1_CRCNEXT; */
-	SPI_SD->CR2 &= ~SPI_CR2_RXDMAEN;
-	sd_state = IDLE;
-	transaction_finished();
-}
-
-void sd_send_dmareturn();
-uint8_t sd_send_command(uint8_t* cmd) {
-	if(sd_state != IDLE) return 0;
-	DMA1_Channel3->CNDTR = 5;
-	DMA1_Channel3->CMAR = (uint32_t)cmd;
-
-	DMA1_Channel3->CCR |= DMA_CCR_EN;
-	SPI_SD->CR2 |= SPI_CR2_TXDMAEN;
-	sd_state = DMA_CMD;
-	
-	dma_snd_fn = sd_send_dmareturn;
-	return 1;
-}
-
-void sd_send_dmareturn() {
-	sd_state = CRC_SPI;
-	SPI_SD->CR1 |= SPI_CR1_CRCNEXT;
-	SPI_SD->CR2 &= ~SPI_CR2_TXDMAEN;
-	sd_state = RESPONSE;
-}
 uint8_t spibuffer[10];
 extern uint32_t led_state;
 
@@ -190,6 +158,11 @@ void cmd_syncronous(){
 }
 
 uint8_t reply[32];
+
+inline void wait_ready() {
+  while (spi_rxtx_sync(0xff) == 0x00)
+    ;
+}
 
 void r1_syncronous() {
 	uint8_t ans = 0xff;
@@ -344,10 +317,7 @@ uint8_t spi_sd_readsize(uint32_t* capacity) {
 				   | (sd_csd.dsize[0]<<16);
 	blkcnt <<= 10;
 	blkcnt |= 0b1111111111;
-	capacity[0] = ((blkcnt&0xff000000) >> 24)
-		| ((blkcnt&0x00ff0000) >> 8)
-		| ((blkcnt&0x0000ff00) << 8)
-		| ((blkcnt&0x000000ff) << 24);
+	capacity[0] = __REV(blkcnt);
 	/* capacity[0] <<= 10; //that was in kilobytes */
 	/* capacity[0]--; // LBA  */
 	return 1;
@@ -355,6 +325,7 @@ uint8_t spi_sd_readsize(uint32_t* capacity) {
 
 uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 	if(!SD_ready) return 0;
+	wait_ready();
 	command[0] = 0x40 | 17;
 	command[1] = (blknum & 0xff000000) >> 24;
 	command[2] = (blknum & 0xff0000) >> 16;
@@ -389,47 +360,69 @@ uint8_t spi_sd_readblock(uint32_t blknum, void* blkbuf) {
 	/* dma_rcv_fn = buffer_ready; */
 	return 1;
 }
+uint32_t num_written = 0;
+void block_written(){
+	volatile uint8_t data_rsp = 0;
+	while ((data_rsp = spi_rxtx_sync(0xff)) == 0xff);
+	num_written ++;
+	if((data_rsp & 0x0f) != 0b0101){ //fix later
+		/* while(1){ */
+		/* 	(void) data_rsp; */
+		/* } */
+	}
+
+	data_ready=1;
+	scsi_transfer = NO_REQUEST;
+	sd_state = IDLE;
+}
 
 uint8_t spi_sd_writeblock(uint32_t blknum, void* blkbuf) {
 	if(!SD_ready) return 0;
+	wait_ready();
+	spi_rxtx_sync(0xff);
+	spi_rxtx_sync(0xff);
+	spi_rxtx_sync(0xff);
 	command[0] = 0x40 | 24;
-	command[1] = blknum & 0xff000000;
-	command[2] = blknum & 0xff0000;
-	command[3] = blknum & 0xff00;
+	command[1] = (blknum & 0xff000000) >> 24;
+	command[2] = (blknum & 0xff0000) >> 16;
+	command[3] = (blknum & 0xff00) >> 8;
 	command[4] = blknum & 0xff;
 	command[5] = 0;
-	static uint32_t ff = 0;
-	ff=0xff;
+	
+	DMA1_Channel3->CCR &= ~DMA_CCR_EN;
 	DMA1_Channel3->CNDTR = BLOCK_SIZE+2;
 	DMA1_Channel3->CMAR = (uint32_t)(blkbuf);
 	DMA1_Channel3->CCR |= DMA_CCR_MINC; //increment
-
+ CMD24:
 	cmd_syncronous();
 	uint8_t ans = 0;
 	r1_syncronous();
-	__NOP();
-	while ((ans = spi_rxtx_sync(0xff)) == 0xff);
-
-	dma_snd_fn = 0;
+	if(reply[0] != 0x00) goto CMD24;
+	spi_rxtx_sync(0xff);
+	spi_rxtx_sync(0xfe);
+	dma_snd_fn = block_written;
 	DMA1_Channel3->CCR |= DMA_CCR_EN;
 	sd_state = DMA_CMD;
 	return 1;
 }
-uint32_t rcvcnt = 0;
-extern volatile uint8_t data_ready;
+
 void DMA1_Channel2_IRQHandler() { //recieve
+	if (DMA1->ISR & DMA_ISR_TEIF2) {
+		while(1);
+	}
 	DMA1->IFCR = DMA_IFCR_CTCIF2;
 	if(dma_rcv_fn)
 		dma_rcv_fn();
 	sd_state = IDLE;
 	data_ready=1;
-	rcvcnt++;
+	scsi_transfer = NO_REQUEST;
 }
 
 void DMA1_Channel3_IRQHandler() { //transmit
+	if (DMA1->ISR & DMA_ISR_TEIF3) {
+		while(1);
+	}
 	DMA1->IFCR = DMA_IFCR_CTCIF3;
 	if(dma_snd_fn)
 		dma_snd_fn();
-	sd_state = IDLE;
-
 }

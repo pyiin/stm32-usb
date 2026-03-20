@@ -2,6 +2,7 @@
 #include "stm32f1xx.h"
 #include "usb_audio.h"
 #include "usb_hid.h"
+#include "usb_scsi.h"
 
 #define USB_OTG_FS_DEV    ((USB_OTG_DeviceTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_DEVICE_BASE))
 #define USB_OTG_FS_DEV_ENDPOINT0_OUT     ((USB_OTG_OUTEndpointTypeDef *) (USB_OTG_FS_PERIPH_BASE + USB_OTG_OUT_ENDPOINT_BASE))
@@ -151,3 +152,5 @@ void ep_in_enable(uint8_t epn, uint8_t txnum, uint8_t eptype, uint16_t packet_si
 void ep_out_enable(uint8_t epn, uint8_t eptype, uint16_t packet_size);
 void usb_set_out_ep(uint8_t epnum, uint32_t size, uint16_t pcktcnt);
 void usb_set_out_ep_iso(uint8_t epnum, uint32_t size, uint8_t pcktcnt, uint8_t parity);
+
+

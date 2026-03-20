@@ -57,16 +57,6 @@ void stream_packet_recieved(uint32_t bcnt) {
 	static uint8_t parity;
 	usb_set_out_ep_iso(AUDIO_EP, AUDIO_PCKTSIZ, 1, parity);
 	parity = !parity;
-	int32_t v = *(int32_t*)abuffer;
-	v = (v<0)?-v:v;
-	if (i++ == 50) {
-		/* light(v >> 21); */
-		i=0;
-	}
-	/* if(half == 1) */
-	/* 	light(0xf0); */
-	/* else */
-	/* 	light(0x0f); */
 }
 
 void i2s2_gpio() {

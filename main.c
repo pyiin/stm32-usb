@@ -96,8 +96,8 @@ int main(void)
 	led_setup();
 	tim6_setup();
 #endif
-	spi1_init();
-	spi_sd_init();
+	/* spi1_init(); */
+	/* spi_sd_init(); */
 	/* spi_sd_readblock(0, blkbuf); */
 	/* for(uint32_t i = 0; i<1000000; i++) __NOP(); */
 	/* spi_sd_readblock(1, blkbuf+512); */

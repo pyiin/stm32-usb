@@ -123,7 +123,7 @@ device_descriptor_t pre_usb_device_descriptor = {
 };
 uint32_t** usb_device_descriptor = (uint32_t**)&(pre_usb_device_descriptor);
 
-#define CONF_SIZE 9+9+9+9+9+9+7+11+7+12+7  +9+9+7 +9+7+7
+#define CONF_SIZE 9+9+9+9+9+9+7+11+7+12+7  +9+9+7 //+9+7+7
 
 
 full_configuration_descriptor_t pre_configuration_descriptor = {
@@ -570,7 +570,11 @@ void clock_setup(){
 	FLASH->ACR = FLASH_ACR_LATENCY_2 | FLASH_ACR_PRFTBE;
 	//switch to pll
 	RCC->CFGR |= RCC_CFGR_SW_PLL;
-
+	
+	RCC->CFGR &= ~RCC_CFGR_PPRE1;
+	RCC->CFGR &= ~RCC_CFGR_PPRE2;
+	RCC->CFGR |= RCC_CFGR_PPRE1_DIV2; 
+	RCC->CFGR |= RCC_CFGR_PPRE2_DIV2;
 	// USB CLK
 	RCC->AHBENR |= RCC_AHBENR_OTGFSEN;
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_AFIOEN;
@@ -699,7 +703,7 @@ void setup_host_to_device() {
 		ep_in_enable(HID_EPID, HID_EPID, EP_interrupt , HID_PCKTSIZ);
 		hiddis = 0;
 		usbWrite(HID_EPID, kbd_report, HID_PCKTSIZ);
-		init_scsi();
+		/* init_scsi(); */
     }
 	else if(setup.bRequest == BREQUEST_SET_INTERFACE) {
 		set_ep0_zlpdev();
